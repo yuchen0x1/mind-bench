@@ -1,0 +1,14 @@
+{
+  "generatedAt": "2026-11-12T02:30:00+08:00",
+  "environment": {"node": "v24.20.0", "os": "Windows", "cwd": "C:\\Users\\lenmo\\Desktop\\模型智商提示词"},
+  "commands": [
+    {"command": "npm test", "status": "passed", "result": "38/38 tests passed", "notes": "6 test files; includes manifest assertions"},
+    {"command": "npm run test:e2e", "status": "passed", "result": "6/6 Playwright tests passed", "notes": "Chromium; includes report, settings, research and mobile flows"},
+    {"command": "npm run build", "status": "passed", "result": "Vite production build succeeded", "notes": "chunk size warning: JS asset ~922.78 kB"},
+    {"command": "node --check src/server.mjs; node --check src/db.mjs", "status": "passed", "result": "syntax checks passed", "notes": "read-only validation"}
+  ],
+  "coverageEvidence": ["real API integration", "Mock isolation", "external answer isolation", "deferred run completion", "manifest endpoint and SHA-256 shape", "AI judge schema and human override", "responsive UI"],
+  "notRun": ["real provider network calls", "Docker build in this turn", "load/performance benchmark", "security penetration test"],
+  "knownWarnings": ["npm reports unknown store-dir config", "Vite warns about large JS chunk"],
+  "releaseAssessment": "delivery-ready for local single-user evaluation; not ready for public multi-tenant deployment or claims based on real-provider comparative scores"
+}

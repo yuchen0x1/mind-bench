@@ -1,0 +1,18 @@
+services:
+  mind-bench:
+    build: .
+    image: mind-bench:local
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      MIND_BENCH_DATA_DIR: "/data"
+      # 首次启动前可设置固定派生密钥；一旦写入数据不要更换。
+      # MIND_BENCH_SECRET: "replace-with-high-entropy-secret"
+    volumes:
+      - mind-bench-data:/data
+    restart: unless-stopped
+
+volumes:
+  mind-bench-data:
