@@ -2,7 +2,7 @@
   "projectName": "MIND BENCH",
   "projectType": ["Web 管理后台", "AI 工具", "开发者工具"],
   "rootPath": "C:\\Users\\lenmo\\Desktop\\模型智商提示词",
-  "repository": {"git": false, "remote": null, "branch": null, "note": "当前目录不是 Git 仓库，无法提供分支或提交信息。"},
+  "repository": {"git": true, "remote": null, "branch": "main", "initialCommit": "7721ffb", "note": "已在当前目录初始化本地 Git；当前无远程仓库。后续项目更新统一提交到 main。"},
   "stack": {"frontend": "React 19 + Vite 8", "backend": "Express 5", "database": "Node.js node:sqlite / SQLite WAL", "tests": ["Vitest", "Playwright"]},
   "scope": "单项目独立进化",
   "taskId": "mind-bench-evolution-2026-11-12",
