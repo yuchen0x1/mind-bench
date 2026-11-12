@@ -55,4 +55,3 @@ jobs:
       - name: Create GitHub Release
         run: |
           gh release create "${GITHUB_REF_NAME}" release/mind-bench-web-*.tar.gz release/SHA256SUMS.txt --verify-tag --title "MIND BENCH ${GITHUB_REF_NAME}" --generate-notes
-
