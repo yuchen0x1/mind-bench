@@ -17,6 +17,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/health` | `{ ok, time, db, concurrency }`。 |
+| GET | `/api/version` | 当前 Web 构建版本、build ID、通道和检查时间；响应禁止缓存。 |
 | GET | `/api/dashboard` | 题目/分类/模型/真实运行统计、最近运行、分类统计、候选榜单、`trend`（近 14 日运行趋势）。 |
 | GET | `/api/categories` | 分类列表、题目难度计数、有真实结果时的均分。 |
 | GET | `/api/analytics` | 分类统计、近 30 天真实运行趋势及榜单。 |

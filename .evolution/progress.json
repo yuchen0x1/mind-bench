@@ -6,16 +6,17 @@
     {"id": "P0", "name": "安全与数据完整性", "status": "COMPLETED", "evidence": ["AES-256-GCM 密钥存储", "安全响应头", "限流", "Mock/external 榜单隔离"]},
     {"id": "P1", "name": "核心评测能力", "status": "COMPLETED", "evidence": ["203 道题", "15 分类", "多供应商调用", "确定性评分/AI 裁判/人工复核"]},
     {"id": "P2", "name": "可信运行与可追溯性", "status": "COMPLETED", "evidence": ["Run Manifest", "SHA-256 完整性摘要", "会话清单 API 与导出"]},
-    {"id": "P3", "name": "UI/UX 与性能", "status": "COMPLETED", "evidence": ["报告页可复现性摘要", "响应式布局", "构建通过但仍有 chunk size warning"]},
+    {"id": "P3", "name": "UI/UX 与性能", "status": "COMPLETED", "evidence": ["报告页可复现性摘要", "版本检测与刷新提示", "响应式布局", "构建通过但仍有 chunk size warning"]},
     {"id": "P4", "name": "高级扩展", "status": "PARTIAL", "evidence": ["AI 裁判、模型发现、外部数据集导入已完成", "代码沙箱与多租户未实现"]},
-    {"id": "P5", "name": "文档与交付", "status": "COMPLETED", "evidence": ["README、API、架构、CHANGELOG、.evolution 全套记录"]}
+    {"id": "P5", "name": "文档与交付", "status": "COMPLETED", "evidence": ["README、API、架构、CHANGELOG、AUTO_UPDATE、CI/Release workflow、.evolution 全套记录"]}
   ],
   "milestones": [
     {"name": "开源候选研究", "status": "COMPLETED", "count": 15},
     {"name": "筛选参考项目", "status": "COMPLETED", "count": 8},
     {"name": "深度源码研究", "status": "COMPLETED", "count": 5},
     {"name": "真实功能移植", "status": "COMPLETED", "feature": "Run Manifest"},
-    {"name": "自动化回归", "status": "COMPLETED", "tests": {"unitApi": "38/38", "e2e": "6/6", "build": "passed"}}
+    {"name": "自动化回归", "status": "COMPLETED", "tests": {"unitApi": "38/38", "e2e": "6/6", "build": "passed", "versionApi": "passed"}},
+    {"name": "自动更新接入", "status": "COMPLETED", "feature": "/api/version + browser refresh prompt + GitHub workflows"}
   ],
   "openRisks": ["未配置真实供应商 API Key", "内置题库仍需逐题人工/专家复核", "单机应用无认证与多租户", "未提供模型生成代码沙箱"]
 }

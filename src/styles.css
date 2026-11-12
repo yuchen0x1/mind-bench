@@ -353,6 +353,13 @@ button:disabled {
   display: flex;
   flex-direction: column;
 }
+.update-banner{display:flex;align-items:center;gap:12px;padding:10px 22px;border-bottom:1px solid rgba(124,156,255,.28);background:linear-gradient(90deg,rgba(76,103,190,.18),rgba(87,213,171,.08));color:var(--text)}
+.update-banner-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;color:#aebeff;background:rgba(124,156,255,.16)}
+.update-banner-copy{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.update-banner-copy b{font-size:12px}
+.update-banner-copy span{font-size:11px;color:var(--text-2);line-height:1.5}
+.update-settings-panel{grid-column:1 / -1}
+@media (max-width:700px){.update-banner{align-items:flex-start;flex-wrap:wrap;padding:12px 15px}.update-banner-copy{flex-basis:calc(100% - 42px)}.update-banner .button{margin-left:40px}}
 .topbar {
   height: 53px;
   border-bottom: 1px solid var(--line);

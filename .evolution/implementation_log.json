@@ -24,4 +24,10 @@
   "integrity": {"algorithm": "sha256", "canonicalization": "JSON.stringify(payload) before integrity field", "secretDataExcluded": true},
   "behavior": ["创建会话时冻结快照", "运行期间不改写清单", "旧会话返回空对象兼容", "Mock/external 只标记不伪装成真实模型"],
   "notImplemented": ["按 manifest 自动复跑按钮", "不同 manifest 的 diff 视图", "跨进程持久化队列"]
+  ,"autoUpdate": {
+    "status": "COMPLETED_FOR_WEB",
+    "files": [".github/workflows/ci.yml", ".github/workflows/release.yml", "docs/AUTO_UPDATE.md", "vite.config.js", "src/server.mjs", "src/App.jsx", "src/styles.css", "tests/api.integration.test.js"],
+    "capabilities": ["build-info.json", "/api/version", "5-minute polling", "refresh banner", "settings manual check", "SemVer tag validation", "SHA-256 release asset"],
+    "blockedExternal": ["no GitHub remote configured", "no actual Release permission/run", "no code-signing certificate", "no CDN/deployment provider verification"]
+  }
 }

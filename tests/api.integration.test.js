@@ -21,6 +21,11 @@ describe('HTTP and SQLite integration', () => {
 
   it('serves health, dashboard, category and filtered task queries', async () => {
     expect((await api('/api/health')).data.ok).toBe(true);
+    const version = await api('/api/version');
+    expect(version.status).toBe(200);
+    expect(version.data.name).toBe('MIND BENCH');
+    expect(version.data.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(version.data.buildId).toBeTruthy();
     expect((await api('/api/categories')).data).toHaveLength(15);
     const filtered = await api('/api/tasks?category=logic&q=条件');
     expect(filtered.data.tasks.length).toBeGreaterThan(0);

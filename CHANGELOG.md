@@ -9,6 +9,9 @@
 ## [Unreleased] - 2026-11-12 — 运行可信度与异步取消
 
 ### Added
+- 新增 Web 版本清单 /api/version、构建信息 dist/build-info.json 和浏览器新部署提示。
+- 新增 .github/workflows/ci.yml 与 .github/workflows/release.yml：main/PR 验证、SemVer 标签构建和 SHA-256 Release 资产。
+- 新增 docs/AUTO_UPDATE.md，明确 Web 更新边界、缓存策略、权限和未完成的签名/远程发布条件。
 
 - 为每个测试会话新增 Run Manifest：冻结题目版本、模型/供应商参数、评分权重、评分器版本与执行环境。
 - 报告页展示可复现性摘要，新增 `/api/sessions/:id/manifest` 与清单 JSON 导出。

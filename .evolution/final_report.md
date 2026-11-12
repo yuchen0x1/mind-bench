@@ -28,6 +28,8 @@ MIND BENCH 是 React/Vite + Express + SQLite 的本地 AI 模型评测工作台�
 
 实现结果：`test_sessions.run_manifest` 持久化；新增 `GET /api/sessions/:id/manifest`；报告 JSON 内嵌清单；报告页展示摘要并支持“导出清单”。旧数据库通过 `ensureColumn()` 轻量迁移兼容，不覆盖历史记录。
 
+同时完成 Web 自动更新接入：Vite 构建生成 `dist/build-info.json`，Express 提供不可缓存的 `/api/version`，浏览器每 5 分钟检查新构建并提示刷新；GitHub Actions 在 `main`/PR 上做 CI，SemVer 标签工作流生成包含 SHA-256 校验文件的 Web Release 资产。
+
 ## 4. UI、架构与安全改进
 
 - 报告页新增可复现性面板，显示题目/模型/权重/环境快照、评分器和哈希前缀。
@@ -52,6 +54,8 @@ MIND BENCH 是 React/Vite + Express + SQLite 的本地 AI 模型评测工作台�
 
 新增回归证据验证了 manifest 版本、题目/模型快照、权重快照、SHA-256 格式和独立 manifest API。未执行真实供应商网络调用、压力测试或渗透测试。
 
+自动更新专用检查：`/api/version`、`dist/build-info.json`、构建缓存头、CI/Release YAML 已完成静态与本地构建验证；真实 GitHub Release、远程部署刷新和 CDN 缓存行为待外部仓库/部署权限验证。
+
 ## 7. 进化评分
 
 | 维度 | 改造前 | 改造后 | 证据 |
@@ -73,6 +77,7 @@ MIND BENCH 是 React/Vite + Express + SQLite 的本地 AI 模型评测工作台�
 3. 还没有基于 Run Manifest 的自动复跑、manifest diff 和回归质量门禁。
 4. 代码执行沙箱、多租户认证、CSRF/SSRF 防护仍不在当前单机范围内。
 5. Vite 生产 bundle 仍需代码分割优化。
+6. 当前没有 GitHub 远程仓库、真实 Release、CDN 或代码签名证书，因此不能声称完成线上发布和签名安装包更新。
 
 ## 9. 下一阶段建议
 

@@ -1,9 +1,9 @@
 import express from 'express';
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { db, encryptSecret, getTask, listModels, listTasks, now, safeJson, uuid, audit } from './db.mjs';
 import { scoreAnswer, scoreToMindBenchScore } from './scoring.mjs';
 import { checkProviderConnection, invokeModel, listProviderModels } from './providers.mjs';
@@ -11,6 +11,19 @@ import { aggregateVerdicts, buildJudgePrompt, parseVerdict, rubricFor, verdictRa
 
 const app = express();
 app.disable('x-powered-by');
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const dist = resolve(projectRoot, 'dist');
+const packageJson = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf8'));
+const buildInfoPath = resolve(dist, 'build-info.json');
+const buildInfo = existsSync(buildInfoPath)
+  ? JSON.parse(readFileSync(buildInfoPath, 'utf8'))
+  : {
+      name: 'MIND BENCH',
+      version: process.env.APP_VERSION || packageJson.version,
+      buildId: process.env.BUILD_ID || process.env.GITHUB_SHA?.slice(0, 12) || 'local',
+      buildTimestamp: process.env.BUILD_TIMESTAMP || null,
+      channel: process.env.BUILD_CHANNEL || 'stable',
+    };
 function transaction(callback) {
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -65,6 +78,10 @@ const asyncPool = async (items, limit, worker) => {
 };
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'MIND BENCH', now: now(), database: 'sqlite', concurrencyLimit }));
+app.get('/api/version', (_req, res) => {
+  res.setHeader('cache-control', 'no-store, max-age=0');
+  res.json({ ...buildInfo, checkedAt: now(), releaseUrl: process.env.APP_RELEASE_URL || null });
+});
 app.get('/api/dashboard', (_req, res) => {
   const taskCount = db.prepare('SELECT COUNT(*) AS n FROM benchmark_tasks WHERE is_public=1').get().n;
   const categoryCount = db.prepare('SELECT COUNT(*) AS n FROM benchmark_categories').get().n;
@@ -841,7 +858,21 @@ app.get('/api/report/:sessionId/export',(req,res)=>{
 
 app.use('/api',(req,res)=>res.status(404).json({error:'API 路由不存在。'}));
 app.use((error,_req,res,_next)=>{console.error('[api-error]',error.message);if(res.headersSent)return;res.status(error.status??500).json({error:error.status?error.message:'服务器内部错误。'});});
-const dist=resolve(process.cwd(),'dist');if(existsSync(dist)){app.use(express.static(dist,{index:false}));app.use((req,res,next)=>req.path.startsWith('/api/')?next():res.sendFile(resolve(dist,'index.html')));}
+if (existsSync(dist)) {
+  app.use(express.static(dist, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html') || filePath.endsWith('build-info.json')) {
+        res.setHeader('cache-control', 'no-store, max-age=0');
+      } else {
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
+  app.use((req, res, next) => req.path.startsWith('/api/')
+    ? next()
+    : res.sendFile(resolve(dist, 'index.html'), { headers: { 'cache-control': 'no-store, max-age=0' } }));
+}
 
 export const server=createServer(app);
 const isDirect=process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href;

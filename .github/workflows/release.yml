@@ -1,0 +1,58 @@
+name: Release web artifact
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUILD_ID: ${{ github.sha }}
+      BUILD_CHANNEL: stable
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify semantic version tag
+        shell: bash
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          tag_version="${GITHUB_REF_NAME#v}"
+          test "$package_version" = "$tag_version" || {
+            echo "Tag $tag_version does not match package.json version $package_version"
+            exit 1
+          }
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Package immutable web artifact
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release/mind-bench-web-$version
+          cp -R dist release/mind-bench-web-$version/dist
+          cp package.json package-lock.json README.md CHANGELOG.md release/mind-bench-web-$version/
+          tar -czf release/mind-bench-web-$version.tar.gz -C release mind-bench-web-$version
+          sha256sum release/mind-bench-web-$version.tar.gz > release/SHA256SUMS.txt
+      - name: Create GitHub Release
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release/mind-bench-web-*.tar.gz release/SHA256SUMS.txt --verify-tag --title "MIND BENCH ${GITHUB_REF_NAME}" --generate-notes
+

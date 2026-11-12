@@ -176,6 +176,8 @@ const request = async (path, options = {}) => {
     throw new Error(data.error ?? `请求失败 (${response.status})`);
   return data;
 };
+const CLIENT_VERSION = __MIND_BENCH_VERSION__;
+const CLIENT_BUILD_ID = __MIND_BENCH_BUILD_ID__;
 const Icon = ({ name, ...props }) => {
   const Component = icons[name] ?? Sparkles;
   return <Component {...props} />;
@@ -225,6 +227,45 @@ const useApi = (path, dependency = []) => {
   }, [refresh]);
   return { data, error, loading, refresh };
 };
+const useUpdateStatus = () => {
+  const [status, setStatus] = useState({
+    checking: false,
+    available: false,
+    currentVersion: CLIENT_VERSION,
+    currentBuildId: CLIENT_BUILD_ID,
+    serverVersion: CLIENT_VERSION,
+    serverBuildId: CLIENT_BUILD_ID,
+    error: '',
+    checkedAt: null,
+  });
+  const check = useCallback(async () => {
+    setStatus((current) => ({ ...current, checking: true, error: '' }));
+    try {
+      const remote = await request('/api/version', { cache: 'no-store' });
+      const available = remote.version !== CLIENT_VERSION || remote.buildId !== CLIENT_BUILD_ID;
+      setStatus({
+        checking: false,
+        available,
+        currentVersion: CLIENT_VERSION,
+        currentBuildId: CLIENT_BUILD_ID,
+        serverVersion: remote.version,
+        serverBuildId: remote.buildId,
+        releaseUrl: remote.releaseUrl,
+        channel: remote.channel,
+        checkedAt: remote.checkedAt,
+        error: '',
+      });
+    } catch (error) {
+      setStatus((current) => ({ ...current, checking: false, error: error.message }));
+    }
+  }, []);
+  useEffect(() => {
+    check();
+    const timer = setInterval(check, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [check]);
+  return { status, check };
+};
 
 export default function App() {
   const [page, setPage] = useState(
@@ -243,6 +284,8 @@ export default function App() {
     () => localStorage.getItem("mindbench-theme") || "dark",
   );
   const [activeRun, setActiveRun] = useState(null);
+  const [updateStatusDismissed, setUpdateStatusDismissed] = useState(false);
+  const { status: updateStatus, check: checkForUpdate } = useUpdateStatus();
   const { data: dashboard, refresh: refreshDashboard } =
     useApi("/api/dashboard");
   const { data: categoryData, refresh: refreshCategories } =
@@ -491,6 +534,9 @@ export default function App() {
         />
       )}
       <main className="main-column">
+        <UpdateBanner status={updateStatus} dismissed={updateStatusDismissed} onRefresh={() => location.reload()} onDismiss={() => {
+          setUpdateStatusDismissed(true);
+        }} />
         <header className="topbar">
           <div className="topbar-left">
             <button
@@ -674,6 +720,8 @@ export default function App() {
                   onNotice={showNotice}
                   theme={theme}
                   setTheme={setTheme}
+                  updateStatus={updateStatus}
+                  checkForUpdate={checkForUpdate}
                 />
               )}
             </motion.div>
@@ -5187,7 +5235,30 @@ function ResearchPage() {
   );
 }
 
-function SettingsPage({ onNotice, theme, setTheme }) {
+function UpdateBanner({ status, dismissed, onRefresh, onDismiss }) {
+  if (!status.available || dismissed) return null;
+  return (
+    <div className="update-banner" role="status">
+      <div className="update-banner-icon">
+        <RefreshCw size={16} />
+      </div>
+      <div className="update-banner-copy">
+        <b>发现新的 MIND BENCH 部署</b>
+        <span>
+          当前 {status.currentVersion} · 新版本 {status.serverVersion}。刷新页面后加载新版本，当前运行中的测试不会被中断。
+        </span>
+      </div>
+      <button className="button button-primary button-small" onClick={onRefresh}>
+        立即刷新
+      </button>
+      <button className="icon-button" aria-label="稍后提醒" title="稍后提醒" onClick={onDismiss}>
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate }) {
   const { data, refresh } = useApi("/api/settings");
   const [audit, setAudit] = useState([]);
   useEffect(() => {
@@ -5237,6 +5308,42 @@ function SettingsPage({ onNotice, theme, setTheme }) {
         subtitle="个人本地实例 · SQLite 持久化 · API 服务绑定 127.0.0.1。"
       />
       <div className="settings-grid">
+        <section className="panel settings-panel update-settings-panel">
+          <div className="settings-section-head">
+            <span className="settings-icon green-settings">
+              <RefreshCw size={17} />
+            </span>
+            <div>
+              <b>版本与更新</b>
+              <small>Web 部署通过 GitHub Actions 发布，浏览器检测到新构建后提示刷新</small>
+            </div>
+          </div>
+          <div className="setting-row">
+            <div>
+              <b>当前版本</b>
+              <span>{updateStatus.currentVersion} · 构建 {updateStatus.currentBuildId}</span>
+            </div>
+            <span className="run-status status-completed"><i />稳定通道</span>
+          </div>
+          <div className="setting-row">
+            <div>
+              <b>{updateStatus.available ? "发现 " + updateStatus.serverVersion : "更新状态"}</b>
+              <span>
+                {updateStatus.error
+                  ? "检查失败：" + updateStatus.error
+                  : updateStatus.available
+                    ? "新构建已部署，刷新后加载；不会自动下载或中断正在运行的测试。"
+                    : updateStatus.checkedAt
+                      ? "已检查：" + new Date(updateStatus.checkedAt).toLocaleString("zh-CN")
+                      : "尚未检查"}
+              </span>
+            </div>
+            <button className="button button-small button-ghost" onClick={checkForUpdate} disabled={updateStatus.checking}>
+              <RefreshCw size={12} className={updateStatus.checking ? "spin" : ""} />
+              {updateStatus.checking ? "检查中" : "检查更新"}
+            </button>
+          </div>
+        </section>
         <section className="panel settings-panel">
           <div className="settings-section-head">
             <span className="settings-icon">

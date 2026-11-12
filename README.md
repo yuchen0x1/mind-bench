@@ -45,6 +45,7 @@ MIND BENCH（AI 智力评测竞技场）是一个**可真实运行**的本地 AI
 | 测试 | 并发控制、超时、取消、单模型失败隔离 | ✅ 已实现 |
 | 测试 | 原始回答完整保存（不改写、不猜测隐藏思维链） | ✅ 已实现 |
 | 测试 | 可复现运行清单：题目/模型/参数/评分/环境快照、SHA-256 完整性摘要、JSON 导出 | ✅ 已实现 |
+| 发布 | Web 版本清单、部署变更检测、浏览器刷新提示、GitHub Actions CI/Release 工作流 | ✅ 已实现（远程 Release 待配置） |
 | 评分 | 确定性规则 10 种：exact / one_of / contains / all_keywords / any_keywords / numeric / regex / json / word_limit / manual | ✅ 已实现 |
 | 评分 | **AI 裁判**：匿名化候选、固定 Rubric、严格 JSON、服务端重算总分、多裁判交叉验证 | ✅ 已实现 |
 | 评分 | 人工评分与复核，人工分不被 AI 覆盖 | ✅ 已实现 |
@@ -439,6 +440,7 @@ E2E 覆盖的真实路径（非 mock 掉的前端）：
 - [测试数据指南](docs/TEST_DATA_GUIDE.md) — 出题规范、复核流程
 - [提示词与数据来源](docs/PROMPT_DATA_SOURCES.md) — 来源分级 A/B/C/D/E
 - [开源项目研究](docs/OPEN_SOURCE_RESEARCH.md) — lm-evaluation-harness、HELM、lighteval、promptfoo、OpenAI Evals、BIG-bench、ARC-AGI 的对照研究
+- [自动更新与发布](docs/AUTO_UPDATE.md) — Web 版本检测、缓存策略、GitHub Actions、Release 与安全边界
 - [API 参考](docs/API.md) — 48 个 HTTP 端点
 - [更新日志](CHANGELOG.md) · [贡献指南](CONTRIBUTING.md)
 
