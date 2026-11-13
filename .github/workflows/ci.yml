@@ -53,3 +53,28 @@ jobs:
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore
+  docker:
+    name: Docker build and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build image
+        run: docker build -t mind-bench:ci .
+      - name: Start isolated local container
+        run: docker run -d --name mind-bench-smoke -p 127.0.0.1:3000:3000 mind-bench:ci
+      - name: Check API and built interface
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          curl -fsS http://127.0.0.1:3000/ | grep '/assets/'
+          docker exec mind-bench-smoke test -f /app/docs/ARCHITECTURE.md
+      - name: Container logs and cleanup
+        if: always()
+        run: |
+          docker logs mind-bench-smoke || true
+          docker rm -fv mind-bench-smoke || true

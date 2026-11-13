@@ -4,7 +4,10 @@ data
 screenshots
 test-results
 tests
-docs
 .build-parts
+.tmp
+.evolution
+.workbuddy
+release
 .git
 *.log

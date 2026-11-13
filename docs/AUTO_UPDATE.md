@@ -27,7 +27,7 @@ Vite 构建会生成 dist/build-info.json，其中包含版本、构建 ID、构
 ~~~json
 {
   "name": "MIND BENCH",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "buildId": "local",
   "buildTimestamp": "2026-11-12T00:00:00.000Z",
   "channel": "stable",
