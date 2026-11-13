@@ -6,8 +6,8 @@ MIND BENCH 是普通 Web 应用，不是 Electron/Tauri 桌面安装包。因此
 
 1. GitHub Actions 对 main 和 Pull Request 执行测试、构建和浏览器回归。
 2. 推送符合 vMAJOR.MINOR.PATCH 的 Git 标签后，Release 工作流验证标签与 package.json 版本一致。
-3. 工作流生成包含 dist/ 的不可变 Web 构建包，并生成 SHA256SUMS.txt。
-4. GitHub Release 使用 GitHub CLI 和 GITHUB_TOKEN 创建；当前没有远程仓库时，工作流不会在本地执行发布。
+3. 工作流生成包含 `dist/`、后端、schema、文档和依赖清单的完整应用包，生成逐文件 `release-manifest.json` 和下载包 `SHA256SUMS.txt`；不包含用户数据库或密钥。
+4. Windows/Linux 测试、生产依赖审计及独立解压运行验证通过后，使用 GitHub CLI 和最小权限 GITHUB_TOKEN 创建 Release。
 5. 已打开的浏览器页面每 5 分钟轮询 /api/version。服务端构建版本或构建 ID 变化时，页面显示“发现新的部署”，用户可刷新加载新版本。
 
 ## 版本信息
@@ -27,7 +27,7 @@ Vite 构建会生成 dist/build-info.json，其中包含版本、构建 ID、构
 ~~~json
 {
   "name": "MIND BENCH",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "buildId": "local",
   "buildTimestamp": "2026-11-12T00:00:00.000Z",
   "channel": "stable",
@@ -40,8 +40,8 @@ buildId 在 GitHub Actions 中使用提交 SHA；本地构建没有提交环境�
 
 ## GitHub Actions
 
-- .github/workflows/ci.yml：main push 与 PR 触发；执行 npm ci、npm test、npm run build、Chromium 安装和 npm run test:e2e。
-- .github/workflows/release.yml：只响应 v*.*.* 标签；先验证标签版本等于 package.json，再测试、构建、打包、生成 SHA-256，并创建 GitHub Release。
+- .github/workflows/ci.yml：main push、PR、手动及可复用调用；Windows/Linux 执行安装、单元/API、生产依赖审计、构建、浏览器回归和独立发布包验证。生产依赖 high 以上漏洞会阻止通过。
+- .github/workflows/release.yml：响应 v*.*.* 标签，复用上述完整验证；验证标签等于 package.json 后打包、核对、提取发布说明并创建 Release。
 - CI 仅需要 contents: read。
 - Release 仅需要 contents: write，使用 GitHub 提供的 GITHUB_TOKEN；不需要额外私钥。
 
@@ -50,10 +50,20 @@ buildId 在 GitHub Actions 中使用提交 SHA；本地构建没有提交环境�
 ~~~bash
 npm version patch
 git push origin main
-git push origin v0.1.1
+git push origin v0.2.1
 ~~~
 
-必须先把 package.json 版本变更提交到 main，再推送同名 vX.Y.Z 标签。当前工作区没有远程仓库，因此 origin 和实际 Release 尚未配置。
+必须先把 package.json、锁文件、`docs/releases/release-notes.md` 与 README 更新提交到 main，再推送同名 vX.Y.Z 标签。项目仓库为 [yuchen0x1/mind-bench](https://github.com/yuchen0x1/mind-bench)。不要移动已经发布的版本标签；后续修复递增版本。
+
+本地制作并检查与 CI 相同的完整包：
+
+```bash
+npm run build
+npm run package:release
+npm run verify:release
+```
+
+输出位于 `.tmp/releases/`。发布包可直接 `npm ci --omit=dev` 后 `npm start`，无须再次构建。验证脚本在临时目录安装和运行，使用隔离数据与动态端口，不触碰正式 `data/` 或正在运行的 3000 服务。离线已有缓存时可设 `MIND_BENCH_RELEASE_OFFLINE=1`；远程 CI 使用正常联网安装。
 
 ## 部署侧缓存要求
 
@@ -78,7 +88,7 @@ Express 已对这些路径设置对应的缓存头。若由 Nginx、CDN 或托�
 
 尚未实现/需要外部条件：
 
-- GitHub Release 的真实资产下载验证，需要远程仓库和发布权限；
+- GitHub Release 的下载资产校验与 CI 结果以实际发布后的记录为准；
 - 浏览器端不会自动下载或安装操作系统更新包；
 - 没有代码签名证书，因此不能声称完成 Windows/macOS 安装包签名；
 - 没有 Beta/Dev 通道的独立部署源；
@@ -90,6 +100,8 @@ Express 已对这些路径设置对应的缓存头。若由 Nginx、CDN 或托�
 npm test
 npm run build
 npm run test:e2e
+npm run package:release
+npm run verify:release
 ~~~
 
 更新专用验证包括：

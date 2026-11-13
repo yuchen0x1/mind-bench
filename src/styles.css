@@ -4319,3 +4319,13 @@ kbd {
 }
 .leaderboard-tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin;padding-bottom:2px}
 .leaderboard-tabs::-webkit-scrollbar{height:4px}
+.report-progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  color: var(--text-2);
+  font-size: 13px;
+}

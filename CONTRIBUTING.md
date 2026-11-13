@@ -4,12 +4,12 @@
 
 ## 开发环境
 
-- Node.js 22.5+（建议 Node.js 24）。
+- Node.js 24+。
 - 安装依赖：`npm ci`。
 - 构建：`npm run build`。
 - 单元/API 测试：`npm test`。
 - 首次运行浏览器测试需：`npm run test:e2e:install`，再运行 `npm run test:e2e`。
-- `npm run server` 启动 API，`npm run dev` 启动 Vite；目前开发模式没有 `/api` 代理，完整 UI 验证优先使用 `npm run build && npm start`。
+- `npm run server` 启动 API，`npm run dev` 启动 Vite；访问 `http://127.0.0.1:5173`，`/api` 默认代理至 3000 端口。自定义后端地址用 `MIND_BENCH_API_TARGET`。
 
 测试已做数据隔离：`tests/setup.js` 会把 `MIND_BENCH_DATA_DIR` 指向临时目录，`playwright.config.js` 同样注入独立目录。**自动化测试不会写入 `data/mind-bench.sqlite`。** 新增测试时请沿用这一隔离方式（不要硬编码数据库路径），否则会污染真实数据。运行测试前请勿手动清空或覆盖用户已有的 `data/` 文件。
 
@@ -52,4 +52,4 @@
 
 ## PR/变更说明
 
-描述改动目的、用户可见行为、数据库/题库影响、授权依据、测试命令与结果、已知限制。涉及向外部服务发请求、发布或不可逆数据改动的事项须事先得到授权。本仓库当前没有已确认的 PR 模板或正式版本发布流程。
+描述改动目的、用户可见行为、数据库/题库影响、测试命令与结果、已知限制。请使用仓库 PR 模板；用户可见变更同步到 `docs/releases/release-notes.md` 和 README 的「最新更新」。标签发布步骤见 [自动更新与发布](docs/AUTO_UPDATE.md)。

@@ -1,57 +1,50 @@
-name: Release web artifact
-
+name: Release
 on:
   push:
-    tags:
-      - 'v*.*.*'
-
+    tags: ['v*.*.*']
 permissions:
-  contents: write
-
+  contents: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
   release:
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       BUILD_ID: ${{ github.sha }}
       BUILD_CHANNEL: stable
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Verify semantic version tag
-        shell: bash
+          registry-url: https://registry.npmjs.org
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node -e "const p=require('./package.json'); if(process.env.RELEASE_TAG !== 'v'+p.version || !/^\d+\.\d+\.\d+$/.test(p.version)) process.exit(1)"
+      - name: Install and build
         run: |
-          package_version=$(node -p "require('./package.json').version")
-          tag_version="${GITHUB_REF_NAME#v}"
-          test "$package_version" = "$tag_version" || {
-            echo "Tag $tag_version does not match package.json version $package_version"
-            exit 1
-          }
-      - name: Test
-        run: npm test
-      - name: Build
-        run: npm run build
-      - name: Package immutable web artifact
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          mkdir -p release/mind-bench-web-$version
-          cp -R dist release/mind-bench-web-$version/dist
-          cp package.json package-lock.json README.md CHANGELOG.md release/mind-bench-web-$version/
-          tar -czf release/mind-bench-web-$version.tar.gz -C release mind-bench-web-$version
-          sha256sum release/mind-bench-web-$version.tar.gz > release/SHA256SUMS.txt
-      - name: Create GitHub Release
-        run: |
-          gh release create "${GITHUB_REF_NAME}" release/mind-bench-web-*.tar.gz release/SHA256SUMS.txt --verify-tag --title "MIND BENCH ${GITHUB_REF_NAME}" --generate-notes
+          npm ci
+          npm run build
+          npm run package:release -- release
+      - name: Verify release download contents
+        run: npm run verify:release -- release/mind-bench-$(node -p "require('./package.json').version").tar.gz
+      - name: Extract release notes
+        run: node scripts/release-notes.mjs > release/notes.md
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release/mind-bench-*.tar.gz release/SHA256SUMS.txt --verify-tag --title "MIND BENCH $RELEASE_TAG" --notes-file release/notes.md --latest

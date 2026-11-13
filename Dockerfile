@@ -1,6 +1,6 @@
 # MIND BENCH — 生产镜像（多阶段构建）
-# node:22 提供稳定的 node:sqlite（实验特性但可用），不要降到 < 22.5
-FROM node:22-bookworm-slim AS build
+# 与开发和 CI 保持一致，使用 Node.js 24 内置的 node:sqlite。
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -9,7 +9,7 @@ COPY src ./src
 COPY public ./public
 RUN npm run build
 
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
@@ -19,6 +19,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY src ./src
+COPY docs ./docs
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node
 VOLUME ["/data"]

@@ -31,10 +31,10 @@
 
 ## 外部 benchmark 与题目数据
 
-本项目没有复制上述开源研究项目中的 benchmark 题目、提示词或数据集。内置题目来源记录为 MIND BENCH 原创草案（`source-original-v1`，来源分级 A）。仓库根目录尚未添加 `LICENSE`，因此**项目自身代码与原创题库的再分发许可尚未正式声明**，请勿推定为 MIT 或 CC0。用户导入内容的许可由导入者负责核查，工具目录或框架仓库的代码许可**不**自动适用于其索引/使用的数据集。
+本项目没有复制上述开源研究项目中的 benchmark 题目、提示词或数据集。内置题目来源记录为 MIND BENCH 原创草案（`source-original-v1`，来源分级 A），沿用来源记录中的 `CC0-1.0`。项目代码采用 MIT。用户导入内容的许可由导入者负责核查，工具或框架的代码许可不自动适用于外部数据集。
 
 详见 [开源研究笔记](docs/OPEN_SOURCE_RESEARCH.md) 和 [题目数据审核指南](docs/TEST_DATA_GUIDE.md)。
 
 ## 项目自身许可证
 
-当前仓库未附根目录 `LICENSE` 文件，因此本项目自身源代码暂未明确授予开源使用/再分发许可。请勿仅凭本文件中的依赖许可证推断项目代码许可。正式公开前由权利人选择并添加项目许可证。
+项目源代码使用根目录 [MIT LICENSE](LICENSE)。运行时依赖树（109 个组件，含前端打包依赖）见 [CycloneDX SBOM](docs/dependency-sbom.cdx.json)，许可证包含 MIT、ISC、BSD-3-Clause、0BSD 及这些许可证的组合。各包版权与许可全文见 [第三方声明](docs/THIRD_PARTY_NOTICES.txt)。SBOM 不是漏洞扫描结果；开发依赖不在该运行时清单内。

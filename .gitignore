@@ -41,3 +41,6 @@ pnpm-debug.log*
 tmp/
 .tmp/
 .build-parts/
+release/
+.evolution/
+.workbuddy/

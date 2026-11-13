@@ -2948,11 +2948,36 @@ function ReportPage({ id, onBack, onNotice }) {
   const [tab, setTab] = useState("runs");
   const [judgeIds, setJudgeIds] = useState([]);
   const [judging, setJudging] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   const [diffMode, setDiffMode] = useState(true);
   const judges = judgesReq.data?.judges ?? [];
 
   const runs = data?.runs ?? [];
   const manifest = data?.session?.manifest ?? {};
+  const running = data?.session?.id === id && data.session.status === "running";
+  useEffect(() => {
+    if (!running) return;
+    let alive = true;
+    let timer;
+    const poll = async () => {
+      await refresh();
+      if (alive) timer = setTimeout(poll, 1500);
+    };
+    timer = setTimeout(poll, 1500);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [running, refresh]);
+  const stopSession = async () => {
+    setCancelling(true);
+    try {
+      await request(`/api/sessions/${id}/cancel`, { method: "POST", body: "{}" });
+      onNotice("已发送停止请求，后续排队任务不会调用模型。");
+      await refresh();
+    } catch (e) {
+      onNotice(e.message, "error");
+    } finally {
+      setCancelling(false);
+    }
+  };
   const real = runs.filter(
     (run) => !run.isMock && !run.isExternal && run.status === "completed" && run.score !== null,
   );
@@ -3065,7 +3090,7 @@ function ReportPage({ id, onBack, onNotice }) {
       onNotice(e.message, "error");
     }
   };
-  if (loading)
+  if (loading && data?.session?.id !== id)
     return (
       <div className="loading-panel">
         <LoaderCircle className="spin" />
@@ -3100,6 +3125,16 @@ function ReportPage({ id, onBack, onNotice }) {
         subtitle={`创建于 ${new Date(data.session.started_at).toLocaleString("zh-CN")} · ${modeLabel(data.session.mode)} · ${runs.length} 条模型运行`}
         actions={
           <>
+            {running && (
+              <button className="button button-ghost" onClick={stopSession} disabled={cancelling}>
+                <Square size={14} />
+                {cancelling ? "正在停止…" : "停止测试"}
+              </button>
+            )}
+            <button className="button button-ghost" onClick={refresh} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "spin" : ""} />
+              刷新报告
+            </button>
             <button className="button button-ghost" onClick={exportJson}>
               <Download size={14} />
               导出 JSON
@@ -3120,6 +3155,12 @@ function ReportPage({ id, onBack, onNotice }) {
           </>
         }
       />
+      {running && (
+        <div className="panel report-progress" role="status">
+          <RunStatus status={data.session.status} />
+          <span>已结束 {runs.filter((run) => run.status !== "running").length} 条运行 · 报告自动刷新中</span>
+        </div>
+      )}
       <div className="report-kpis">
         <div className="panel">
           <span>运行任务</span>

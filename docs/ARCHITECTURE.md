@@ -4,7 +4,7 @@
 
 | 层 | 选择 | 理由 |
 |---|---|---|
-| 运行时 | Node.js ≥ 22.5 | `node:sqlite` 从该版本起内置，无需额外安装数据库 |
+| 运行时 | Node.js 24+ | 使用内置 `node:sqlite`，无需额外安装数据库；CI 与 Docker 使用 Node.js 24 |
 | API | Express 5 | 中间件式 SPA 回退、原生 async 错误传播 |
 | 持久化 | `node:sqlite` `DatabaseSync` | 零依赖、WAL、外键、预编译语句；单文件便于备份 |
 | 前端 | React 19 + Vite 8 | Hash 路由单页应用，构建即静态产物，无 SSR 负担 |
@@ -48,7 +48,7 @@
   → POST /api/test-sessions { mode, taskIds, modelIds, repeats }
   → 展开为 N×M 个 (task, model) 任务
   → 创建 test_sessions 行 + 逐条 test_runs 行（status=running）
-  → 同时写入不可变 run_manifest：题目/模型/评分/环境快照 + SHA-256
+  → 同时写入不可变 run_manifest 1.1.0：题目全文/参考答案/覆盖提示词/模型/单价/评分/环境快照 + SHA-256
   → asyncPool 并发执行（上限 MIND_BENCH_CONCURRENCY）
       → providers.mjs 调用对应协议
       → 写 model_responses（原始文本、usage、latency）
@@ -66,7 +66,7 @@
 POST /api/sessions/:id/judge { judgeModelIds }
   → 过滤：跳过 mock / 未成功 / 空回答 / 已 reviewed 人工分
   → 对每条 run：
-      buildJudgePrompt()：回答标记为 Candidate A，rubric 来自 scoring_dimensions
+      buildJudgePrompt()：回答匿名化，提示词/参考答案/rubric 来自运行清单（旧清单兼容读取当前题目）
       → 调用裁判模型
       → parseVerdict()：严格 JSON + 维度校验，失败即 422 拒绝该条
       → 服务端按权重重算 overall

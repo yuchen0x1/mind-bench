@@ -137,7 +137,7 @@ describe('task authoring workflow', () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     expect(session.data.session.status).toBe('completed');
-    expect(session.data.session.manifest.manifestVersion).toBe('1.0.0');
+    expect(session.data.session.manifest.manifestVersion).toBe('1.1.0');
     expect(session.data.session.manifest.tasks[0]).toMatchObject({ id: 'math-01', version: '1.0.0' });
     expect(session.data.session.manifest.models[0]).toMatchObject({ modelId: 'target-1', providerKind: 'openai' });
     expect(session.data.session.manifest.scoring.weightSnapshot.math).toBeDefined();

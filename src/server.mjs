@@ -35,6 +35,18 @@ function transaction(callback) {
     throw error;
   }
 }
+// A local service must not accept browser requests from arbitrary websites.
+app.use('/api', (req, res, next) => {
+  const loopbackOnly = !process.env.HOST || ['127.0.0.1', 'localhost', '::1'].includes(process.env.HOST);
+  if (loopbackOnly && !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(req.hostname)) {
+    return res.status(403).json({ error: '仅允许通过本机地址访问 API。' });
+  }
+  const origin = req.get('origin');
+  if (req.get('sec-fetch-site') === 'cross-site' || (origin && origin !== `${req.protocol}://${req.get('host')}`)) {
+    return res.status(403).json({ error: '拒绝跨站请求，请从本机应用页面操作。' });
+  }
+  next();
+});
 app.use(express.json({ limit: '8mb', strict: true }));
 app.use((req, res, next) => {
   res.setHeader('x-content-type-options', 'nosniff');
@@ -94,7 +106,7 @@ app.get('/api/dashboard', (_req, res) => {
     FROM test_runs r JOIN benchmark_tasks t ON t.id=r.task_id JOIN benchmark_categories c ON c.id=t.category_id JOIN models m ON m.id=r.model_id
     LEFT JOIN evaluation_results e ON e.run_id=r.id LEFT JOIN (SELECT run_id, raw_text AS response_text, latency_ms FROM model_responses) p ON p.run_id=r.id
     ORDER BY r.started_at DESC LIMIT 12`).all();
-  const categories = db.prepare(`SELECT c.id,c.name,c.icon,COUNT(t.id) AS task_count,AVG(e.score) AS average_score
+  const categories = db.prepare(`SELECT c.id,c.name,c.icon,COUNT(DISTINCT t.id) AS task_count,AVG(e.score) AS average_score
     FROM benchmark_categories c LEFT JOIN benchmark_tasks t ON t.category_id=c.id AND t.is_public=1
     LEFT JOIN test_runs r ON r.task_id=t.id AND r.status='completed' AND r.is_mock=0 AND r.is_external=0 LEFT JOIN evaluation_results e ON e.run_id=r.id
     GROUP BY c.id ORDER BY c.sort_order`).all();
@@ -105,11 +117,11 @@ app.get('/api/dashboard', (_req, res) => {
   res.json({ stats: { taskCount, categoryCount, modelCount, realRuns, sessions, averageScore: average === null ? null : Math.round(average), completionRate: realRuns ? Math.round(completed / (completed + db.prepare("SELECT COUNT(*) AS n FROM test_runs WHERE status='failed' AND is_mock=0 AND is_external=0").get().n || 1) * 100) : null }, recent, categories, trend, leaderboard: buildLeaderboard({ limit: 5 }).eligible });
 });
 app.get('/api/categories', (_req, res) => {
-  const rows = db.prepare(`SELECT c.id,c.name,c.name_en,c.description,c.icon,c.sort_order,COUNT(t.id) AS task_count,
-    SUM(CASE WHEN t.difficulty='easy' THEN 1 ELSE 0 END) AS easy_count,
-    SUM(CASE WHEN t.difficulty='medium' THEN 1 ELSE 0 END) AS medium_count,
-    SUM(CASE WHEN t.difficulty='hard' THEN 1 ELSE 0 END) AS hard_count,
-    SUM(CASE WHEN t.difficulty='expert' THEN 1 ELSE 0 END) AS expert_count,
+  const rows = db.prepare(`SELECT c.id,c.name,c.name_en,c.description,c.icon,c.sort_order,COUNT(DISTINCT t.id) AS task_count,
+    COUNT(DISTINCT CASE WHEN t.difficulty='easy' THEN t.id END) AS easy_count,
+    COUNT(DISTINCT CASE WHEN t.difficulty='medium' THEN t.id END) AS medium_count,
+    COUNT(DISTINCT CASE WHEN t.difficulty='hard' THEN t.id END) AS hard_count,
+    COUNT(DISTINCT CASE WHEN t.difficulty='expert' THEN t.id END) AS expert_count,
     AVG(CASE WHEN r.is_mock=0 AND r.is_external=0 THEN e.score END) AS average_score
     FROM benchmark_categories c LEFT JOIN benchmark_tasks t ON t.category_id=c.id AND t.is_public=1
     LEFT JOIN test_runs r ON r.task_id=t.id AND r.status='completed' LEFT JOIN evaluation_results e ON e.run_id=r.id
@@ -224,6 +236,7 @@ app.post('/api/tasks/import', (req, res) => {
   const errors = []; let imported = 0;
   transaction(() => {
     records.forEach((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) { errors.push({ index, error: '每条题目必须是 JSON 对象。' }); return; }
       const categoryId = item.categoryId ?? item.category_id;
       const prompt = item.promptZh ?? item.prompt_zh ?? item.prompt;
       if (!item.title || !categoryId || !prompt || !db.prepare('SELECT 1 FROM benchmark_categories WHERE id=?').get(categoryId)) { errors.push({ index, error: 'title、有效 categoryId 和 promptZh 为必填项。' }); return; }
@@ -292,6 +305,7 @@ app.post('/api/tasks/import-dataset', (req, res) => {
   const errors = []; let imported = 0; const timestamp = now();
   transaction(() => {
     for (const [index, item] of records.entries()) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) { errors.push({ index, error: '每条题目必须是 JSON 对象。' }); continue; }
       if (item.__error) { errors.push({ index, error: item.__error }); continue; }
       const prompt = pick(item, ['promptZh', 'prompt_zh', 'prompt', 'question', 'problem', 'input']);
       const answer = pick(item, ['referenceAnswer', 'reference_answer', 'answer', 'solution', 'output', 'target']);
@@ -371,7 +385,7 @@ app.post('/api/models', (req,res) => {
   const body=req.body??{};const missing=required(body,['providerId','name','modelId']);if(missing.length)return res.status(400).json({error:`缺少必填字段：${missing.join(', ')}`});
   if(!db.prepare('SELECT 1 FROM providers WHERE id=?').get(body.providerId))return res.status(400).json({error:'供应商不存在。'});
   const id=uuid();const timestamp=now();const isDefault=Boolean(body.isDefault);
-  transaction(()=>{if(isDefault)db.prepare('UPDATE models SET is_default=0').run();db.prepare(`INSERT INTO models (id,provider_id,name,model_id,model_version,enabled,is_default,temperature,max_tokens,timeout_ms,max_retries,input_cost_per_million,output_cost_per_million,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,body.providerId,String(body.name).slice(0,100),String(body.modelId).slice(0,200),String(body.modelVersion??'').slice(0,100),body.enabled===false?0:1,isDefault?1:0,Math.max(0,Math.min(2,Number(body.temperature)||0)),Math.max(1,Math.min(32768,Number(body.maxTokens)||1024)),Math.max(1000,Math.min(180000,Number(body.timeoutMs)||60000)),Math.max(0,Math.min(5,Number(body.maxRetries)||1)),Math.max(0,Number(body.inputCostPerMillion)||0),Math.max(0,Number(body.outputCostPerMillion)||0),timestamp,timestamp);});
+  transaction(()=>{if(isDefault)db.prepare('UPDATE models SET is_default=0').run();db.prepare(`INSERT INTO models (id,provider_id,name,model_id,model_version,enabled,is_default,temperature,max_tokens,timeout_ms,max_retries,input_cost_per_million,output_cost_per_million,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,body.providerId,String(body.name).slice(0,100),String(body.modelId).slice(0,200),String(body.modelVersion??'').slice(0,100),body.enabled===false?0:1,isDefault?1:0,Math.max(0,Math.min(2,Number(body.temperature)||0)),Math.max(1,Math.min(32768,Number(body.maxTokens)||1024)),Math.max(1000,Math.min(180000,Number(body.timeoutMs)||60000)),Math.max(0,Math.min(5,Math.trunc(Number(body.maxRetries??1))||0)),Math.max(0,Number(body.inputCostPerMillion)||0),Math.max(0,Number(body.outputCostPerMillion)||0),timestamp,timestamp);});
   writeAudit('create','model',id);res.status(201).json({model:safeModel(modelById.get(id))});
 });
 app.get('/api/models/:id', (req, res) => {
@@ -428,7 +442,7 @@ app.post('/api/models/:id/test-connection', async (req,res) => {
   try{const result=await checkProviderConnection(model);res.json({ok:true,latencyMs:result.latencyMs,model:model.name,isMock:result.isMock,message:result.isMock?'Mock 供应商可用，但不代表真实模型连接。':'供应商真实连接成功。'});}catch(error){res.status(error.status??502).json({ok:false,error:error.message});}
 });
 
-const manifestVersion = '1.0.0';
+const manifestVersion = '1.1.0';
 const scoreWeightsSnapshot = () => {
   const row = db.prepare("SELECT value FROM system_settings WHERE key='score_weights'").get();
   return safeJson(row?.value, {});
@@ -441,6 +455,10 @@ const buildRunManifest = ({ name, mode, settings, tasks, models, external = fals
     categoryName: task.category_name,
     version: task.version ?? '1.0.0',
     verificationStatus: task.verification_status,
+    promptZh: task.prompt_zh,
+    promptEn: task.prompt_en,
+    referenceAnswer: task.reference_answer,
+    objective: task.objective,
     scoringRule: safeJson(task.scoring_rule, {}),
     scoringDimensions: safeJson(task.scoring_dimensions, []),
   }));
@@ -456,11 +474,13 @@ const buildRunManifest = ({ name, mode, settings, tasks, models, external = fals
     maxTokens: Number(model.max_tokens ?? 1024),
     timeoutMs: Number(model.timeout_ms ?? 60000),
     maxRetries: Number(model.max_retries ?? 0),
+    inputCostPerMillion: Number(model.input_cost_per_million ?? 0),
+    outputCostPerMillion: Number(model.output_cost_per_million ?? 0),
   }));
   const payload = {
     manifestVersion,
     createdAt: now(),
-    application: { name: 'MIND BENCH', version: process.env.npm_package_version || '0.1.0' },
+    application: { name: 'MIND BENCH', version: packageJson.version },
     session: { name, mode, settings },
     tasks: taskSnapshot,
     models: modelSnapshot,
@@ -493,6 +513,7 @@ const runTest = async ({session,task,model,manualText,promptOverride}) => {
   const isExternal = manualText !== undefined;
   db.prepare('INSERT INTO test_runs (id,session_id,task_id,model_id,task_version,model_version,status,is_mock,is_external,started_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run(runId,session.id,task.id,model.id,taskVersion,model.model_version??'','running',0,isExternal?1:0,started);
   try{
+    if (session.controller.signal.aborted) throw Object.assign(new Error('测试已取消，未发送模型请求。'), { status: 499 });
     const result=manualText!==undefined?{text:String(manualText).slice(0,50000),inputTokens:0,outputTokens:0,requestId:'',isMock:false,latencyMs:0}:await invokeModel(model,promptOverride??task.prompt_zh,task,session.controller.signal);
     const cost=(result.inputTokens*Number(model.input_cost_per_million||0)+result.outputTokens*Number(model.output_cost_per_million||0))/1_000_000;
     db.prepare('UPDATE test_runs SET status=?,is_mock=?,is_external=?,completed_at=? WHERE id=?').run(session.controller.signal.aborted?'cancelled':'completed',result.isMock?1:0,isExternal?1:0,now(),runId);
@@ -502,7 +523,7 @@ const runTest = async ({session,task,model,manualText,promptOverride}) => {
     db.prepare('INSERT INTO evaluation_results (id,run_id,evaluator_type,score,passed,dimensions,rationale,created_at) VALUES (?,?,?,?,?,?,?,?)').run(uuid(),runId,result.isMock?'mock':scoreResult.score===null?'manual':'objective',scoreResult.score,scoreResult.passed===null?null:scoreResult.passed?1:0,JSON.stringify(scoreResult.dimensions??[]),scoreResult.rationale,now());
     return {runId,taskId:task.id,taskTitle:task.title,modelId:model.id,modelName:model.name,providerName:model.provider_name,status:session.controller.signal.aborted?'cancelled':'completed',isMock:result.isMock,isExternal,rawText:result.text,latencyMs:result.latencyMs,inputTokens:result.inputTokens,outputTokens:result.outputTokens,cost,score:scoreResult.score,passed:scoreResult.passed,scoringType:result.isMock?'mock':scoreResult.score===null?'manual':'objective',rationale:scoreResult.rationale};
   }catch(error){
-    const status=error.status===499?'cancelled':'failed';db.prepare('UPDATE test_runs SET status=?,completed_at=? WHERE id=?').run(status,now(),runId);
+    const status=session.controller.signal.aborted||error.status===499?'cancelled':'failed';db.prepare('UPDATE test_runs SET status=?,completed_at=? WHERE id=?').run(status,now(),runId);
     db.prepare('INSERT INTO model_responses (id,run_id,raw_text,latency_ms,error) VALUES (?,?,?,?,?)').run(uuid(),runId,'',0,String(error.message).slice(0,2000));
     return {runId,taskId:task.id,taskTitle:task.title,modelId:model.id,modelName:model.name,providerName:model.provider_name,status,error:error.message,isMock:false,isExternal};
   }
@@ -534,7 +555,7 @@ app.post('/api/test-runs', async (req,res) => {
     const body=req.body??{};const task=getTask(body.taskId);if(!task)return res.status(404).json({error:'找不到题目。'});
     const models=allowedModels(body.modelIds??(body.modelId?[body.modelId]:[]));
     const manualText=body.manualText===undefined?undefined:String(body.manualText).slice(0,50000);
-    const session=beginSession(body.name??task.title,manualText===undefined?'single':'external',{taskIds:[task.id],modelIds:models.map((m)=>m.id),external:manualText!==undefined,promptOverride:body.promptOverride!==undefined},{tasks:[task],models,external:manualText!==undefined});
+    const session=beginSession(body.name??task.title,manualText===undefined?'single':'external',{taskIds:[task.id],modelIds:models.map((m)=>m.id),external:manualText!==undefined,promptOverride:body.promptOverride===undefined?null:String(body.promptOverride).slice(0,20000)},{tasks:[task],models,external:manualText!==undefined});
     const entries=[{task,manualText,promptOverride:body.promptOverride===undefined?undefined:String(body.promptOverride).slice(0,20000)}];
     if (body.deferred === true) { executeSessionDetached({session,entries,models}); return res.status(202).json({sessionId:session.id,status:'running',results:[]}); }
     const results=await executeSession({session,entries,models});res.status(201).json({sessionId:session.id,results});
@@ -599,6 +620,23 @@ app.get('/api/judges', (_req, res) => {
 const judgeRunRow = db.prepare(`SELECT r.*,x.raw_text,x.error FROM test_runs r LEFT JOIN model_responses x ON x.run_id=r.id WHERE r.id=?`);
 const verdictList = (runId) => db.prepare('SELECT * FROM judge_verdicts WHERE run_id=? ORDER BY created_at').all(runId).map((row) => ({ ...row, valid: Boolean(row.valid), dimensions: safeJson(row.dimensions, []) }));
 
+const taskForJudging = (run) => {
+  const session = db.prepare('SELECT run_manifest FROM test_sessions WHERE id=?').get(run.session_id);
+  const manifest = safeJson(session?.run_manifest, {});
+  const snapshot = manifest.tasks?.find((task) => task.id === run.task_id);
+  // Older manifests did not contain prompt/reference text. Preserve their existing fallback.
+  if (!snapshot || !Object.hasOwn(snapshot, 'promptZh') || !Object.hasOwn(snapshot, 'referenceAnswer')) return getTask(run.task_id);
+  const override = manifest.session?.settings?.promptOverride;
+  return {
+    id: snapshot.id,
+    title: snapshot.title,
+    version: snapshot.version,
+    prompt_zh: typeof override === 'string' ? override : snapshot.promptZh,
+    reference_answer: snapshot.referenceAnswer,
+    scoring_dimensions: JSON.stringify(snapshot.scoringDimensions ?? []),
+  };
+};
+
 const applyJudgeScore = ({ run, aggregate, judgeLabels, force }) => {
   const existing = db.prepare('SELECT * FROM evaluation_results WHERE run_id=?').get(run.id);
   if (existing?.reviewed && existing.evaluator_type === 'human' && !force) {
@@ -626,7 +664,7 @@ async function judgeOneRun({ runId, judgeModelIds, force = false }) {
   if (run.is_mock) throw Object.assign(new Error('模拟运行不能评分，也不会进入真实榜单。'), { status: 400 });
   if (run.status !== 'completed') throw Object.assign(new Error('仅已完成且有回答的运行可以评分。'), { status: 400 });
   if (!String(run.raw_text ?? '').trim()) throw Object.assign(new Error('该运行没有可评分的模型回答。'), { status: 400 });
-  const task = getTask(run.task_id);
+  const task = taskForJudging(run);
   if (!task) throw Object.assign(new Error('题目已被删除，无法评分。'), { status: 404 });
 
   const unique = [...new Set((Array.isArray(judgeModelIds) ? judgeModelIds : []).map(String))].slice(0, 3);
@@ -730,7 +768,7 @@ function buildLeaderboard({ category = 'overall', version = '', limit = 200, min
   const params = [];
   let filter = '';
   if (category !== 'overall') { filter += ' AND t.category_id=?'; params.push(category); }
-  if (version) { filter += ' AND m.model_version=?'; params.push(version); }
+  if (version) { filter += ' AND r.model_version=?'; params.push(version); }
   const runs = db.prepare(`SELECT r.id,r.model_id,r.task_id,r.completed_at,r.task_version,t.category_id,e.score,e.evaluator_type,x.latency_ms,x.cost
     FROM test_runs r JOIN benchmark_tasks t ON t.id=r.task_id JOIN evaluation_results e ON e.run_id=r.id
     LEFT JOIN model_responses x ON x.run_id=r.id JOIN models m ON m.id=r.model_id
@@ -776,7 +814,8 @@ function buildLeaderboard({ category = 'overall', version = '', limit = 200, min
       weightedParts.push(average * weight);
       weightSum += weight;
     }
-    const weightedAverage = weightSum ? weightedParts.reduce((a, b) => a + b, 0) / weightSum : entry.scores.reduce((a, b) => a + b, 0) / scored;
+    if (!weightSum) continue; // All tested categories were explicitly excluded by their weights.
+    const weightedAverage = weightedParts.reduce((a, b) => a + b, 0) / weightSum;
     const recentAvg = entry.recent.length ? entry.recent.reduce((a, b) => a + b, 0) / entry.recent.length : null;
     const previousAvg = entry.previous.length ? entry.previous.reduce((a, b) => a + b, 0) / entry.previous.length : null;
     const row = {
@@ -813,7 +852,7 @@ app.get('/api/leaderboard', (req, res) => {
   const category = String(req.query.category ?? 'overall');
   const version = String(req.query.version ?? '').slice(0, 100);
   const { eligible, provisional, threshold, weights } = buildLeaderboard({ category, version, limit: 200 });
-  const versions = db.prepare("SELECT DISTINCT model_version FROM models WHERE model_version<>'' ORDER BY model_version").all().map((row) => row.model_version);
+  const versions = db.prepare("SELECT DISTINCT model_version FROM test_runs WHERE model_version<>'' AND is_mock=0 AND is_external=0 AND status='completed' ORDER BY model_version").all().map((row) => row.model_version);
   res.json({
     name: 'MIND BENCH SCORE',
     note: '这是平台自定义评测指数（0—1000），不是人类 IQ 或心理测量结果。按分类均值与可配置权重加权，缺测分类不按 0 处理；只统计非 Mock 的完成测试。',
@@ -842,7 +881,26 @@ app.get('/api/analytics',(req,res)=>{
   const trend=db.prepare(`SELECT substr(r.completed_at,1,10) AS day,COUNT(*) AS runs,ROUND(AVG(e.score),1) AS score FROM test_runs r JOIN evaluation_results e ON e.run_id=r.id WHERE r.is_mock=0 AND r.is_external=0 AND r.status='completed' AND r.completed_at>=datetime('now','-30 days') GROUP BY day ORDER BY day`).all();res.json({categories:categoryRows,trend,leaderboard:buildLeaderboard({}).eligible.slice(0,10)});
 });
 app.get('/api/settings',(_req,res)=>{const settings=Object.fromEntries(db.prepare('SELECT key,value FROM system_settings').all().map((r)=>[r.key,safeJson(r.value,r.value)]));res.json({settings,concurrencyLimit});});
-app.put('/api/settings/:key',(req,res)=>{const allowed=new Set(['score_weights','default_model_id','minimum_leaderboard_runs']);if(!allowed.has(req.params.key))return res.status(400).json({error:'不支持修改该设置。'});db.prepare('INSERT INTO system_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at').run(req.params.key,JSON.stringify(req.body?.value),now());writeAudit('update','setting',req.params.key);res.json({ok:true});});
+app.put('/api/settings/:key', (req, res) => {
+  const key = req.params.key;
+  const value = req.body?.value;
+  if (!['score_weights', 'default_model_id', 'minimum_leaderboard_runs'].includes(key)) return res.status(400).json({ error: '不支持修改该设置。' });
+  if (key === 'minimum_leaderboard_runs' && (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 500)) return res.status(400).json({ error: '最小样本数必须为 1 到 500 的整数。' });
+  if (key === 'score_weights') {
+    const categories = new Set(db.prepare('SELECT id FROM benchmark_categories').all().map((row) => row.id));
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.keys(value).length || Object.entries(value).some(([id, weight]) => !categories.has(id) || typeof weight !== 'number' || !Number.isFinite(weight) || weight < 0 || weight > 100)) return res.status(400).json({ error: '权重必须为有效分类与 0 到 100 数字组成的对象。' });
+  }
+  if (key === 'default_model_id') {
+    const model = typeof value === 'string' ? modelById.get(value) : null;
+    if (!model || !model.enabled || !model.provider_enabled) return res.status(400).json({ error: '默认模型必须存在且已启用。' });
+  }
+  transaction(() => {
+    db.prepare('INSERT INTO system_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at').run(key, JSON.stringify(value), now());
+    if (key === 'default_model_id') { db.prepare('UPDATE models SET is_default=0').run(); db.prepare('UPDATE models SET is_default=1 WHERE id=?').run(value); }
+  });
+  writeAudit('update', 'setting', key);
+  res.json({ ok: true });
+});
 app.get('/api/audit',(_req,res)=>res.json(db.prepare('SELECT id,action,entity_type,entity_id,details,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 100').all().map((r)=>({...r,details:safeJson(r.details,{})}))));
 app.get('/api/report/:sessionId',(req,res)=>{
   const session=db.prepare('SELECT * FROM test_sessions WHERE id=?').get(req.params.sessionId);if(!session)return res.status(404).json({error:'找不到测试报告。'});

@@ -22,7 +22,12 @@ export default defineConfig({
     __MIND_BENCH_VERSION__: JSON.stringify(packageJson.version),
     __MIND_BENCH_BUILD_ID__: JSON.stringify(buildId),
   },
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+    proxy: { '/api': { target: process.env.MIND_BENCH_API_TARGET || 'http://127.0.0.1:3000' } },
+  },
   build: { chunkSizeWarningLimit: 900 },
   test: { environment: 'node', include: ['tests/**/*.test.js'], setupFiles: ['tests/setup.js'], testTimeout: 20000, hookTimeout: 20000 },
 });

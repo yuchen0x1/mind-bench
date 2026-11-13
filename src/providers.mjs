@@ -5,13 +5,26 @@ export class ProviderError extends Error {
 }
 const mockResponse = (prompt, task) => `【模拟响应｜不是真实模型输出】\n收到测试提示词（${String(prompt).length} 字符）。\n\n由于这是 Mock 模式，我不会伪装成真实模型回答。请在“模型管理”中配置供应商 API Key 后重新测试。\n\n题目：${task?.title ?? '自定义测试'}`;
 
+// Upstream errors can echo credentials or the complete Gemini request URL.
+const redactSecret = (value, key) => {
+  let text = String(value);
+  if (key) {
+    for (const secret of new Set([key, encodeURIComponent(key)])) text = text.split(secret).join('***');
+  }
+  return text.replace(/([?&](?:key|api_key)=)[^&\s]*/gi, '$1***');
+};
+
 const abortableDelay = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) return reject(new ProviderError('测试已取消。', 499));
-  const timer = setTimeout(resolve, ms);
-  signal?.addEventListener('abort', () => {
+  const onAbort = () => {
     clearTimeout(timer);
     reject(new ProviderError('测试已取消。', 499));
-  }, { once: true });
+  };
+  const timer = setTimeout(() => {
+    signal?.removeEventListener('abort', onAbort);
+    resolve();
+  }, ms);
+  signal?.addEventListener('abort', onAbort, { once: true });
 });
 
 /** 按模型配置重试网络错误和 5xx；4xx/解析错误不会盲目重试。 */
@@ -39,10 +52,15 @@ async function fetchWithRetry(url, init, { retries = 0, signal } = {}) {
 }
 
 export async function invokeModel(model, prompt, task, signal) {
-  const provider = { kind: model.provider_kind, base_url: model.base_url, name: model.provider_name };
+  if (signal?.aborted) throw new ProviderError('测试已取消。', 499);
+  const provider = { kind: model.provider_kind, base_url: String(model.base_url || KIND_DEFAULT_BASE[model.provider_kind] || 'https://api.openai.com/v1').replace(/\/+$/, ''), name: model.provider_name };
   if (provider.kind === 'mock') return { text: mockResponse(prompt, task), inputTokens: 0, outputTokens: 0, requestId: '', isMock: true, latencyMs: 8 };
   const key = decryptSecret(model.api_key_cipher);
-  if (!key && provider.kind !== 'ollama' && !model.base_url.includes('127.0.0.1') && !model.base_url.includes('localhost')) throw new ProviderError('该供应商尚未配置 API Key。', 400);
+  let endpoint;
+  try { endpoint = new URL(provider.base_url); } catch { throw new ProviderError('供应商 Base URL 无效。', 400); }
+  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) throw new ProviderError('供应商地址必须为不含用户名和密码的 HTTP(S) URL。', 400);
+  const local = ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
+  if (!key && provider.kind !== 'ollama' && !local) throw new ProviderError('该供应商尚未配置 API Key。', 400);
   const started = performance.now();
   const timeout = AbortSignal.timeout(Math.min(180000, Math.max(1000, Number(model.timeout_ms) || 60000)));
   const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -50,7 +68,7 @@ export async function invokeModel(model, prompt, task, signal) {
     let response;
     let extract;
     if (provider.kind === 'anthropic') {
-      const base = provider.base_url || 'https://api.anthropic.com';
+      const base = provider.base_url.replace(/\/v1$/, '');
       response = await fetchWithRetry(`${base.replace(/\/$/, '')}/v1/messages`, {
         method: 'POST', signal: requestSignal,
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
@@ -58,7 +76,7 @@ export async function invokeModel(model, prompt, task, signal) {
       }, { retries: model.max_retries, signal: requestSignal });
       extract = (data) => ({ text: (data.content ?? []).filter((part) => part.type === 'text').map((part) => part.text).join('\n'), inputTokens: data.usage?.input_tokens ?? 0, outputTokens: data.usage?.output_tokens ?? 0, requestId: data.id ?? '' });
     } else if (provider.kind === 'gemini') {
-      const base = provider.base_url || 'https://generativelanguage.googleapis.com';
+      const base = provider.base_url.replace(/\/v1beta$/, '');
       response = await fetchWithRetry(`${base.replace(/\/$/, '')}/v1beta/models/${encodeURIComponent(model.model_id)}:generateContent?key=${encodeURIComponent(key)}`, {
         method: 'POST', signal: requestSignal,
         headers: { 'content-type': 'application/json' },
@@ -66,7 +84,7 @@ export async function invokeModel(model, prompt, task, signal) {
       }, { retries: model.max_retries, signal: requestSignal });
       extract = (data) => ({ text: (data.candidates?.[0]?.content?.parts ?? []).map((part) => part.text ?? '').join('\n'), inputTokens: data.usageMetadata?.promptTokenCount ?? 0, outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0, requestId: '' });
     } else {
-      const base = (provider.base_url || (provider.kind === 'ollama' ? 'http://127.0.0.1:11434/v1' : 'https://api.openai.com/v1')).replace(/\/$/, '');
+      const base = provider.kind === 'ollama' && !provider.base_url.endsWith('/v1') ? `${provider.base_url}/v1` : provider.base_url;
       response = await fetchWithRetry(`${base}/chat/completions`, {
         method: 'POST', signal: requestSignal,
         headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
@@ -75,7 +93,7 @@ export async function invokeModel(model, prompt, task, signal) {
       extract = (data) => ({ text: data.choices?.[0]?.message?.content ?? '', inputTokens: data.usage?.prompt_tokens ?? 0, outputTokens: data.usage?.completion_tokens ?? 0, requestId: data.id ?? '' });
     }
     if (!response.ok) {
-      const text = (await response.text()).slice(0, 1200);
+      const text = redactSecret(await response.text(), key).slice(0, 1200);
       throw new ProviderError(`供应商返回 HTTP ${response.status}：${text}`, response.status >= 500 ? 502 : 400);
     }
     const data = await response.json();
@@ -84,8 +102,11 @@ export async function invokeModel(model, prompt, task, signal) {
     return { ...result, isMock: false, latencyMs: Math.max(0, Math.round(performance.now() - started)) };
   } catch (error) {
     if (error.name === 'AbortError' || error.name === 'TimeoutError') throw new ProviderError(error.name === 'TimeoutError' ? '模型请求超时。' : '测试已取消。', error.name === 'TimeoutError' ? 504 : 499);
-    if (error instanceof ProviderError) throw error;
-    throw new ProviderError(`模型请求失败：${error.message}`);
+    if (error instanceof ProviderError) {
+      error.message = redactSecret(error.message, key);
+      throw error;
+    }
+    throw new ProviderError(`模型请求失败：${redactSecret(error.message, key)}`);
   }
 }
 
@@ -139,14 +160,14 @@ export async function listProviderModels(provider) {
   for (const candidate of candidates) {
     try {
       const response = await fetch(candidate.url, { headers: candidate.headers, signal });
-      if (!response.ok) { errors.push(`${candidate.url} → HTTP ${response.status}`); continue; }
+      if (!response.ok) { errors.push(redactSecret(`${candidate.url} → HTTP ${response.status}`, key)); continue; }
       const data = await response.json();
       const models = (candidate.pick ? candidate.pick(data) : (data.data ?? data.models ?? []).map((item) => ({ id: item.id ?? item.name, name: item.name ?? item.id, ownedBy: item.owned_by ?? item.ownedBy ?? '', created: item.created ?? null })))
         .filter((item) => item.id)
         .slice(0, 400);
-      return { models, endpoint: candidate.url.replace(/key=[^&]+/, 'key=***'), note: models.length ? '' : '供应商返回了空模型列表。' };
+      return { models, endpoint: redactSecret(candidate.url, key), note: models.length ? '' : '供应商返回了空模型列表。' };
     } catch (error) {
-      errors.push(`${candidate.url} → ${error.name === 'TimeoutError' ? '超时' : error.message}`);
+      errors.push(redactSecret(`${candidate.url} → ${error.name === 'TimeoutError' ? '超时' : error.message}`, key));
     }
   }
   throw new ProviderError(`无法获取模型列表：${errors.join('；')}`, 502);

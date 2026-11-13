@@ -1,11 +1,17 @@
 const norm = (value) => String(value ?? '').normalize('NFKC').toLocaleLowerCase().replace(/[\s\u3000]+/g, ' ').trim();
 
 export function scoreAnswer(rule, expected, response) {
+  try { return scoreConfiguredAnswer(rule, expected, response); }
+  catch { return { score: null, passed: null, rationale: '评分规则格式无效，请修正题目配置或人工复核；原始回答已保留。' }; }
+}
+
+function scoreConfiguredAnswer(rule, expected, response) {
   const value = String(response ?? '');
   const normalized = norm(value);
   const config = typeof rule === 'string' ? JSON.parse(rule) : (rule ?? {});
   const method = config.method ?? 'manual';
-  if (method === 'manual' || !normalized) return { score: null, passed: null, rationale: '此题采用人工评分；尚未计入客观成绩。' };
+  if (method === 'manual') return { score: null, passed: null, rationale: '此题采用人工评分；尚未计入客观成绩。' };
+  if (!normalized) return { score: 0, passed: false, rationale: '回答为空，未满足客观评分要求。' };
   if (method === 'exact') {
     const target = config.target ?? expected;
     const passed = normalized === norm(target);

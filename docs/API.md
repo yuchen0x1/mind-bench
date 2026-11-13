@@ -123,13 +123,15 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | GET | `/api/sessions?limit=50` | 最近会话（limit ≤ 100）。 |
 | GET | `/api/sessions/:id` | 会话设置、逐条 run/回答/评分，新增 `verdicts`（AI 裁判明细）。 |
 | GET | `/api/sessions/:id/manifest` | 读取该会话的不可变 Run Manifest：题目/模型/评分/环境快照与 SHA-256 完整性摘要。 |
-| POST | `/api/sessions/:id/cancel` | 取消运行中的会话；已结束或不存在 `404`。 |
+| POST | `/api/sessions/:id/cancel` | 取消运行中的会话；排队条目保存为 `cancelled`，不再调用供应商；已结束或不存在 `404`。 |
 | GET | `/api/runs/:id` | 单条运行详情：提示词、原始回答、Token、耗时、费用、评分、评分理由、`judge_model`。 |
 | PUT | `/api/runs/:id/evaluation` | 人工评分：`{ score: 0..100, passThreshold: 0..100, rationale }`。写入 `evaluator_type='human'`。 |
 
 ---
 
 ## AI 裁判
+
+Run Manifest `1.1.0` 补充 `tasks[].promptZh/promptEn/referenceAnswer/objective`、模型成本单价，以及 `session.settings.promptOverride`（字符串或 `null`；旧版为布尔值）。既有记录不迁移、不重写，摘要仍覆盖完整清单。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -141,7 +143,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 裁判流程与拒绝条件：
 
 1. 匿名化候选为 `Candidate A`，提示词声明裁判不知候选来源；
-2. rubric 强制来自题目 `scoring_dimensions`；
+2. 新运行的提示词、参考答案和 rubric 来自 `1.1.0` Run Manifest 快照，包含实际覆盖提示词；编辑题目不改变历史裁判依据。旧清单缺少全文时，兼容读取当前题目；
 3. 解析严格 JSON；**缺维度 / 多维度 / 分数越界 / 自由文本 / `mock:true` 一律 422**；
 4. 服务端按权重重算 `overall`，不信任模型自报值；
 5. 候选模型 ID == 裁判模型 ID → 拒绝（禁止自评）；

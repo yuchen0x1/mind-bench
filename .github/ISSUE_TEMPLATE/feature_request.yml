@@ -1,0 +1,10 @@
+name: 功能建议
+description: 说明你希望完成的评测任务和当前遇到的限制。
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景与希望改进的行为
+    validations:
+      required: true
