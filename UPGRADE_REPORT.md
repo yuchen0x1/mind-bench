@@ -3,8 +3,8 @@
 日期：2026-11-16（Asia/Shanghai）  
 项目：`mind-bench`  
 分支：`main`  
-基线 HEAD：`cac7d02`  
-工作区：本轮修改均在当前仓库，未推送、未创建新 Release。
+代码基线：`287927e`  
+发布目标：`v0.3.0`；本报告随版本发布流程更新。
 
 ## A. 竞品研究
 
@@ -94,7 +94,7 @@ MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、�
 | `npm test -- --reporter=dot` | **PASS** | 9 个测试文件，57/57 通过 |
 | `npm run test:e2e` | **PASS** | Chromium 8/8 通过，覆盖仪表盘、题库、报告刷新/取消、Mock 隔离、工作台、设置、研究页和 390px 移动端 |
 | `npm run build` | **PASS** | Vite 构建成功；主 JS 927.04 kB，仍有 chunk size warning |
-| `npm run package:release` | **PASS** | 生成 `mind-bench-0.2.1.tar.gz`，74 文件，无用户数据 |
+| `npm run package:release` | **PASS** | 生成 `mind-bench-0.3.0.tar.gz`，74 文件，无用户数据 |
 | `npm run verify:release` | **PASS** | SHA-256、74 文件摘要、干净生产安装、UI/API/空数据检查通过 |
 | `npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high` | **PASS** | 0 vulnerabilities |
 | 默认镜像源 `npm audit --omit=dev` | **BLOCKED** | 镜像端点返回 `NOT_IMPLEMENTED`；已用官方 registry 重跑并通过 |

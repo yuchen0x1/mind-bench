@@ -6,7 +6,7 @@
 
 ---
 
-## [Unreleased] - 2026-11-16 — 第二轮进化与边界修复
+## [0.3.0] - 2026-11-16 — 第二轮进化与边界修复
 
 ### Added
 - 为随机挑战加入稳定 `seed`，并把种子写入 Run Manifest。
@@ -22,7 +22,9 @@
 
 ### Verification
 - `npm test`: 57/57 通过。
-- `npm run build`: 待本轮文档收口后重跑；当前仍需关注约 927 kB JS chunk 警告。
+- `npm run test:e2e`: 8/8 通过。
+- `npm run build`: 通过；主 JS chunk 约 927 kB，仍有 chunk size warning。
+- 发布包生成、SHA-256 和独立运行校验通过；官方 npm registry 高危级别审计为 0 vulnerabilities。
 
 ## [0.2.1] - 2026-11-13 — Docker 发布修正
 
