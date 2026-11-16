@@ -6,8 +6,9 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { db, encryptSecret, getTask, listModels, listTasks, now, safeJson, uuid, audit } from './db.mjs';
 import { scoreAnswer, scoreToMindBenchScore } from './scoring.mjs';
-import { checkProviderConnection, invokeModel, listProviderModels } from './providers.mjs';
+import { checkProviderConnection, invokeModel, listProviderModels, PROVIDER_KINDS, validateProviderUrl } from './providers.mjs';
 import { aggregateVerdicts, buildJudgePrompt, parseVerdict, rubricFor, verdictRationale } from './judge.mjs';
+import { seededShuffle } from './reproducibility.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -35,6 +36,13 @@ function transaction(callback) {
     throw error;
   }
 }
+app.use((req, res, next) => {
+  const supplied = String(req.get('x-request-id') ?? '').trim();
+  const requestId = /^[A-Za-z0-9._:-]{1,100}$/.test(supplied) ? supplied : uuid();
+  req.requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+  next();
+});
 // A local service must not accept browser requests from arbitrary websites.
 app.use('/api', (req, res, next) => {
   const loopbackOnly = !process.env.HOST || ['127.0.0.1', 'localhost', '::1'].includes(process.env.HOST);
@@ -60,7 +68,13 @@ app.use('/api', (req, res, next) => {
   const key = req.ip ?? req.socket.remoteAddress ?? 'local';
   const time = Date.now();
   let bucket = rateBuckets.get(key);
-  if (!bucket || bucket.start < time - 60_000) { bucket = { start: time, count: 0 }; rateBuckets.set(key, bucket); }
+  if (!bucket || bucket.start < time - 60_000) {
+    bucket = { start: time, count: 0 };
+    rateBuckets.set(key, bucket);
+    if (rateBuckets.size > 2048) {
+      for (const [candidate, item] of rateBuckets) if (item.start < time - 60_000) rateBuckets.delete(candidate);
+    }
+  }
   bucket.count++;
   if (bucket.count > 240) return res.status(429).json({ error: '请求过于频繁，请稍后重试。' });
   next();
@@ -77,6 +91,19 @@ const writeAudit = (action, type, id, fields = {}) => audit(action, type, id, fi
 const required = (body, fields) => fields.filter((field) => !String(body[field] ?? '').trim());
 const concurrencyLimit = Math.max(1, Math.min(8, Number(process.env.MIND_BENCH_CONCURRENCY) || 4));
 const activeSessions = new Map();
+const csvCell = (value) => {
+  let text = String(value ?? '');
+  // Prevent spreadsheet formula injection when exported model text or task data
+  // begins with a formula marker. A leading apostrophe is intentionally visible
+  // in raw CSV and keeps the cell inert in common spreadsheet applications.
+  if (/^[=+\-@]/.test(text.trimStart())) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+};
+const validateProviderInput = (kind, baseUrl) => {
+  if (!PROVIDER_KINDS.includes(kind)) return { ok: false, error: '不支持的供应商类型。' };
+  if (kind === 'mock') return { ok: true, value: '' };
+  return validateProviderUrl(baseUrl, { allowEmpty: true });
+};
 const asyncPool = async (items, limit, worker) => {
   let cursor = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
@@ -89,7 +116,21 @@ const asyncPool = async (items, limit, worker) => {
   await Promise.all(workers);
 };
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'MIND BENCH', now: now(), database: 'sqlite', concurrencyLimit }));
+// A process restart cannot resume in-memory AbortControllers. Mark those
+// sessions explicitly so reports never remain stuck in "running" forever.
+const recoverInterruptedSessions = () => {
+  const stale = db.prepare("SELECT id FROM test_sessions WHERE status='running'").all();
+  if (!stale.length) return;
+  const timestamp = now();
+  transaction(() => {
+    db.prepare("UPDATE test_runs SET status='failed',completed_at=COALESCE(completed_at,?) WHERE status='running' AND session_id IN (SELECT id FROM test_sessions WHERE status='running')").run(timestamp);
+    db.prepare("UPDATE test_sessions SET status='failed',completed_at=COALESCE(completed_at,?) WHERE status='running'").run(timestamp);
+  });
+  for (const session of stale) audit('recover', 'session', session.id, { reason: 'process_restart' });
+};
+recoverInterruptedSessions();
+
+app.get('/api/health', (req, res) => res.json({ ok: true, name: 'MIND BENCH', now: now(), database: 'sqlite', concurrencyLimit, requestId: req.requestId }));
 app.get('/api/version', (_req, res) => {
   res.setHeader('cache-control', 'no-store, max-age=0');
   res.json({ ...buildInfo, checkedAt: now(), releaseUrl: process.env.APP_RELEASE_URL || null });
@@ -138,6 +179,24 @@ app.get('/api/tasks', (req, res) => {
   if(q){where.push('(title LIKE ? OR prompt_zh LIKE ? OR subcategory LIKE ?)');countParams.push(`%${String(q).slice(0,160)}%`,`%${String(q).slice(0,160)}%`,`%${String(q).slice(0,160)}%`);}
   res.json({ tasks, total: db.prepare(`SELECT COUNT(*) AS n FROM benchmark_tasks WHERE ${where.join(' AND ')}`).get(...countParams).n });
 });
+const exportTasks = (req, res) => {
+  const tasks = listTasks({ category: req.query.category, limit: 1000 }).map((task) => ({
+    id: task.id, title: task.title, categoryId: task.category_id, subcategory: task.subcategory,
+    difficulty: task.difficulty, promptZh: task.prompt_zh, promptEn: task.prompt_en,
+    source: { name: task.source_name, type: task.source_type, license: task.source_license },
+    objective: task.objective, referenceAnswer: task.reference_answer,
+    scoringRule: safeJson(task.scoring_rule, {}), scoringDimensions: safeJson(task.scoring_dimensions, []),
+    commonErrors: safeJson(task.common_errors, []), version: task.version, verificationStatus: task.verification_status,
+  }));
+  if (req.query.format === 'csv') {
+    const columns = ['id','title','categoryId','subcategory','difficulty','promptZh','promptEn','objective','referenceAnswer','version','verificationStatus'];
+    return res.type('text/csv').send([columns.join(','), ...tasks.map((task) => columns.map((key) => csvCell(task[key])).join(','))].join('\r\n'));
+  }
+  return res.json({ exportedAt: now(), tasks });
+};
+// Keep the static export path ahead of /:id; otherwise Express treats "export"
+// as a task id and returns a misleading 404.
+app.get('/api/tasks/export', exportTasks);
 app.get('/api/tasks/:id', (req, res) => {
   const task = getTask(req.params.id);
   if (!task || !task.is_public) return res.status(404).json({ error: '找不到这道题。' });
@@ -257,6 +316,7 @@ app.post('/api/tasks/import-dataset', (req, res) => {
   const content = String(body.content ?? '');
   if (!content.trim()) return res.status(400).json({ error: '请提交数据集文本内容（JSONL 或 CSV）。' });
   if (content.length > 6_000_000) return res.status(413).json({ error: '单次数据集文本上限为 6 MB。' });
+  const contentHash = createHash('sha256').update(content, 'utf8').digest('hex');
   const license = String(body.license ?? '').trim();
   if (!license) return res.status(400).json({ error: '必须填写数据集许可证；来源不明的数据不得导入。' });
   const sourceName = String(body.sourceName ?? '外部数据集').slice(0, 120);
@@ -327,17 +387,8 @@ app.post('/api/tasks/import-dataset', (req, res) => {
       imported += 1;
     }
   });
-  audit('import_dataset', 'task', sourceId, { imported, failed: errors.length, detected, sourceName, license });
-  res.status(201).json({ imported, failed: errors.length, errors: errors.slice(0, 50), detected, sourceId, sourceName, license });
-});
-app.get('/api/tasks/export', (req, res) => {
-  const tasks = listTasks({category:req.query.category,limit:1000}).map((task) => ({id:task.id,title:task.title,categoryId:task.category_id,subcategory:task.subcategory,difficulty:task.difficulty,promptZh:task.prompt_zh,promptEn:task.prompt_en,source:{name:task.source_name,type:task.source_type,license:task.source_license},objective:task.objective,referenceAnswer:task.reference_answer,scoringRule:safeJson(task.scoring_rule,{}),scoringDimensions:safeJson(task.scoring_dimensions,[]),commonErrors:safeJson(task.common_errors,[]),version:task.version,verificationStatus:task.verification_status}));
-  if (req.query.format === 'csv') {
-    const columns = ['id','title','categoryId','subcategory','difficulty','promptZh','promptEn','objective','referenceAnswer','version','verificationStatus'];
-    const quote = (value) => `"${String(value ?? '').replace(/"/g,'""')}"`;
-    return res.type('text/csv').send([columns.join(','),...tasks.map((task) => columns.map((key) => quote(task[key])).join(','))].join('\r\n'));
-  }
-  res.json({exportedAt:now(),tasks});
+  audit('import_dataset', 'task', sourceId, { imported, failed: errors.length, detected, sourceName, license, contentHash });
+  res.status(201).json({ imported, failed: errors.length, errors: errors.slice(0, 50), detected, sourceId, sourceName, license, contentHash });
 });
 app.post('/api/tasks/:id/favorite', (req,res) => {
   if (!getTask(req.params.id)) return res.status(404).json({error:'找不到题目。'});
@@ -354,14 +405,21 @@ app.get('/api/providers', (_req,res) => {
 });
 app.post('/api/providers', (req,res) => {
   const body=req.body??{};const missing=required(body,['name','kind']);if(missing.length)return res.status(400).json({error:`缺少必填字段：${missing.join(', ')}`});
-  const id=uuid();const timestamp=now();const kind=String(body.kind).slice(0,40);const name=String(body.name).slice(0,100);
-  db.prepare('INSERT INTO providers (id,name,kind,base_url,api_key_cipher,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run(id,name,kind,kind==='mock'?'':String(body.baseUrl??'').slice(0,1000),encryptSecret(String(body.apiKey??'')),body.enabled===false?0:1,timestamp,timestamp);
-  writeAudit('create','provider',id,{kind,name});res.status(201).json({provider:{id,name,kind,base_url:body.baseUrl??'',enabled:body.enabled!==false,has_api_key:Boolean(body.apiKey)}});
+  const id=uuid();const timestamp=now();const kind=String(body.kind).trim().slice(0,40);const name=String(body.name).trim().slice(0,100);
+  const validated = validateProviderInput(kind, body.baseUrl);
+  if (!validated.ok) return res.status(400).json({ error: validated.error });
+  const baseUrl = kind === 'mock' ? '' : String(validated.value ?? body.baseUrl ?? '').slice(0,1000);
+  db.prepare('INSERT INTO providers (id,name,kind,base_url,api_key_cipher,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)').run(id,name,kind,baseUrl,encryptSecret(String(body.apiKey??'')),body.enabled===false?0:1,timestamp,timestamp);
+  writeAudit('create','provider',id,{kind,name});res.status(201).json({provider:{id,name,kind,base_url:baseUrl,enabled:body.enabled!==false,has_api_key:Boolean(body.apiKey)}});
 });
 app.put('/api/providers/:id', (req,res) => {
   const old=db.prepare('SELECT * FROM providers WHERE id=?').get(req.params.id);if(!old)return res.status(404).json({error:'找不到供应商。'});
-  const body=req.body??{};const key=Object.hasOwn(body,'apiKey')&&body.apiKey?encryptSecret(String(body.apiKey)):old.api_key_cipher;
-  db.prepare('UPDATE providers SET name=?,kind=?,base_url=?,api_key_cipher=?,enabled=?,updated_at=? WHERE id=?').run(String(body.name??old.name).slice(0,100),String(body.kind??old.kind).slice(0,40),String(body.baseUrl??old.base_url).slice(0,1000),key,body.enabled===undefined?old.enabled:body.enabled?1:0,now(),old.id);
+  const body=req.body??{};const kind=String(body.kind??old.kind).trim().slice(0,40);const baseCandidate=body.baseUrl===undefined?old.base_url:body.baseUrl;
+  const validated = validateProviderInput(kind, baseCandidate);
+  if (!validated.ok) return res.status(400).json({ error: validated.error });
+  const baseUrl = kind === 'mock' ? '' : String(validated.value ?? baseCandidate ?? '').slice(0,1000);
+  const key=Object.hasOwn(body,'apiKey')?encryptSecret(String(body.apiKey??'')):old.api_key_cipher;
+  db.prepare('UPDATE providers SET name=?,kind=?,base_url=?,api_key_cipher=?,enabled=?,updated_at=? WHERE id=?').run(String(body.name??old.name).trim().slice(0,100),kind,baseUrl,key,body.enabled===undefined?old.enabled:body.enabled?1:0,now(),old.id);
   writeAudit('update','provider',old.id);res.json({ok:true});
 });
 app.delete('/api/providers/:id', (req,res) => {
@@ -369,8 +427,7 @@ app.delete('/api/providers/:id', (req,res) => {
   try{db.prepare('DELETE FROM providers WHERE id=?').run(req.params.id);}catch{return res.status(409).json({error:'供应商有历史测试记录，不能删除；可将其停用。'});}
   writeAudit('delete','provider',req.params.id);res.json({ok:true});
 });
-const providerKinds=['openai','anthropic','gemini','deepseek','zhipu','moonshot','minimax','qwen','openrouter','ollama','lmstudio','openai-compatible','mock'];
-app.get('/api/providers/kinds',(_req,res)=>res.json(providerKinds));
+app.get('/api/providers/kinds',(_req,res)=>res.json(PROVIDER_KINDS));
 app.get('/api/providers/:id/models', async (req,res) => {
   const provider = db.prepare('SELECT id,name,kind,base_url,api_key_cipher,enabled FROM providers WHERE id=?').get(req.params.id);
   if (!provider) return res.status(404).json({ error: '找不到供应商。' });
@@ -568,20 +625,28 @@ app.post('/api/test-sessions', async (req,res) => {
     if(Array.isArray(b.taskIds)&&b.taskIds.length)tasks=tasks.filter((task)=>b.taskIds.includes(task.id));
     if(!Array.isArray(b.taskIds)&&b.mode==='category'&&!category)return res.status(400).json({error:'分类挑战必须指定 categoryId。'});
     const count=Math.max(1,Math.min(100,Number(b.questionCount)||tasks.length));
-    if(b.mode==='random'||b.mode==='challenge'||b.mode==='stability'||b.mode==='custom')tasks.sort(()=>Math.random()-0.5);
+    const randomized = ['random','challenge','stability','custom'].includes(b.mode);
+    const seed = String(b.seed ?? uuid()).trim().slice(0, 120);
+    if(randomized)tasks=seededShuffle(tasks, seed);
     if(b.mode==='extreme')tasks=tasks.filter((task)=>['hard','expert'].includes(task.difficulty));
     tasks=tasks.slice(0,count).map((row)=>getTask(row.id));if(!tasks.length)return res.status(400).json({error:'筛选条件下没有可运行的题目。'});
     const models=allowedModels(b.modelIds??[]);const repeats=b.mode==='stability'?Math.min(5,Math.max(2,Number(b.repeats)||3)):1;
     const entries=tasks.flatMap((task)=>Array.from({length:repeats},()=>({task})));
     if(entries.length*models.length>300)return res.status(400).json({error:'本轮最多300个模型-题目任务，请减少题目或模型。'});
-    const session=beginSession(b.name??`${b.categoryId??'综合'}挑战`,b.mode??'custom',{categoryId:b.categoryId??null,questionCount:tasks.length,repeats,modelIds:models.map((m)=>m.id),taskIds:tasks.map((t)=>t.id),repeats},{tasks,models,external:false});
-    if (b.deferred === true) { executeSessionDetached({session,entries,models}); return res.status(202).json({sessionId:session.id,status:'running',results:[]}); }
-    const results=await executeSession({session,entries,models});res.status(201).json({sessionId:session.id,results});
+    const session=beginSession(b.name??`${b.categoryId??'综合'}挑战`,b.mode??'custom',{categoryId:b.categoryId??null,questionCount:tasks.length,repeats,modelIds:models.map((m)=>m.id),taskIds:tasks.map((t)=>t.id),seed},{tasks,models,external:false});
+    if (b.deferred === true) { executeSessionDetached({session,entries,models}); return res.status(202).json({sessionId:session.id,status:'running',seed,results:[]}); }
+    const results=await executeSession({session,entries,models});res.status(201).json({sessionId:session.id,seed,results});
   }catch(error){res.status(error.status??400).json({error:error.message});}
 });
 app.post('/api/sessions/:id/cancel',(req,res)=>{const controller=activeSessions.get(req.params.id);if(!controller)return res.status(404).json({error:'测试任务不存在或已结束。'});controller.abort();res.json({ok:true});});
 app.get('/api/sessions',(req,res)=>{
-  const limit=Math.min(100,Math.max(1,Number(req.query.limit)||50));const sessions=db.prepare(`SELECT s.*,COUNT(r.id) AS run_count,SUM(CASE WHEN r.status='completed' AND r.is_mock=0 AND r.is_external=0 THEN 1 ELSE 0 END) AS real_completed,SUM(CASE WHEN r.is_mock=1 THEN 1 ELSE 0 END) AS mock_count,SUM(CASE WHEN r.is_external=1 THEN 1 ELSE 0 END) AS external_count,AVG(CASE WHEN r.is_mock=0 AND r.is_external=0 THEN e.score END) AS average_score FROM test_sessions s LEFT JOIN test_runs r ON r.session_id=s.id LEFT JOIN evaluation_results e ON e.run_id=r.id GROUP BY s.id ORDER BY s.started_at DESC LIMIT ?`).all(limit);res.json(sessions.map((s)=>({...s,settings:safeJson(s.settings,{}),manifestVersion:safeJson(s.run_manifest,{}).manifestVersion??null})));
+  const limit=Math.min(100,Math.max(1,Number(req.query.limit)||50));
+  const offset=Math.max(0,Number(req.query.offset)||0);
+  const total=Number(db.prepare('SELECT COUNT(*) AS n FROM test_sessions').get().n);
+  const sessions=db.prepare(`SELECT s.*,COUNT(r.id) AS run_count,SUM(CASE WHEN r.status='completed' AND r.is_mock=0 AND r.is_external=0 THEN 1 ELSE 0 END) AS real_completed,SUM(CASE WHEN r.is_mock=1 THEN 1 ELSE 0 END) AS mock_count,SUM(CASE WHEN r.is_external=1 THEN 1 ELSE 0 END) AS external_count,AVG(CASE WHEN r.is_mock=0 AND r.is_external=0 THEN e.score END) AS average_score FROM test_sessions s LEFT JOIN test_runs r ON r.session_id=s.id LEFT JOIN evaluation_results e ON e.run_id=r.id GROUP BY s.id ORDER BY s.started_at DESC LIMIT ? OFFSET ?`).all(limit,offset);
+  res.setHeader('x-total-count', String(total));
+  res.setHeader('x-has-more', String(offset + sessions.length < total));
+  res.json(sessions.map((s)=>({...s,settings:safeJson(s.settings,{}),manifestVersion:safeJson(s.run_manifest,{}).manifestVersion??null})));
 });
 app.get('/api/sessions/:id',(req,res)=>{
   const session=db.prepare('SELECT * FROM test_sessions WHERE id=?').get(req.params.id);if(!session)return res.status(404).json({error:'找不到测试记录。'});
@@ -871,8 +936,7 @@ app.get('/api/leaderboard/export', (req, res) => {
   const rows = [...eligible, ...provisional];
   if (String(req.query.format ?? 'json') === 'csv') {
     const columns = ['rank', 'rank_status', 'model_name', 'model_identifier', 'model_version', 'provider_name', 'mind_bench_score', 'average_score', 'scored_count', 'category_coverage', 'trend', 'average_latency', 'average_cost', 'last_tested'];
-    const q = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    return res.type('text/csv').send([columns.join(','), ...rows.map((row) => columns.map((key) => q(row[key])).join(','))].join('\r\n'));
+    return res.type('text/csv').send([columns.join(','), ...rows.map((row) => columns.map((key) => csvCell(row[key])).join(','))].join('\r\n'));
   }
   res.json({ name: 'MIND BENCH SCORE', exportedAt: now(), threshold, leaderboard: eligible, provisional });
 });
@@ -901,7 +965,15 @@ app.put('/api/settings/:key', (req, res) => {
   writeAudit('update', 'setting', key);
   res.json({ ok: true });
 });
-app.get('/api/audit',(_req,res)=>res.json(db.prepare('SELECT id,action,entity_type,entity_id,details,created_at FROM audit_logs ORDER BY created_at DESC LIMIT 100').all().map((r)=>({...r,details:safeJson(r.details,{})}))));
+app.get('/api/audit',(req,res)=>{
+  const limit=Math.min(200,Math.max(1,Number(req.query.limit)||100));
+  const offset=Math.max(0,Number(req.query.offset)||0);
+  const total=Number(db.prepare('SELECT COUNT(*) AS n FROM audit_logs').get().n);
+  const rows=db.prepare('SELECT id,action,entity_type,entity_id,details,created_at FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit,offset);
+  res.setHeader('x-total-count', String(total));
+  res.setHeader('x-has-more', String(offset + rows.length < total));
+  res.json(rows.map((r)=>({...r,details:safeJson(r.details,{})})));
+});
 app.get('/api/report/:sessionId',(req,res)=>{
   const session=db.prepare('SELECT * FROM test_sessions WHERE id=?').get(req.params.sessionId);if(!session)return res.status(404).json({error:'找不到测试报告。'});
   const runs=db.prepare(`SELECT r.id,r.status,r.is_mock,r.is_external,r.completed_at,t.title AS task_title,c.name AS category_name,m.name AS model_name,p.name AS provider_name,x.raw_text,x.latency_ms,x.input_tokens,x.output_tokens,x.cost,x.error,e.score,e.passed,e.evaluator_type,e.rationale FROM test_runs r JOIN benchmark_tasks t ON t.id=r.task_id JOIN benchmark_categories c ON c.id=t.category_id JOIN models m ON m.id=r.model_id JOIN providers p ON p.id=m.provider_id LEFT JOIN model_responses x ON x.run_id=r.id LEFT JOIN evaluation_results e ON e.run_id=r.id WHERE r.session_id=? ORDER BY r.started_at`).all(session.id);
@@ -910,12 +982,16 @@ app.get('/api/report/:sessionId',(req,res)=>{
 app.get('/api/report/:sessionId/export',(req,res)=>{
   const session=db.prepare('SELECT id,name,mode,started_at,completed_at,run_manifest FROM test_sessions WHERE id=?').get(req.params.sessionId);if(!session)return res.status(404).json({error:'找不到测试报告。'});
   const rows=db.prepare(`SELECT r.id,r.status,r.is_mock,r.is_external,t.id AS task_id,t.title AS task_title,c.id AS category_id,c.name AS category_name,m.id AS model_id,m.name AS model_name,p.name AS provider_name,x.raw_text,x.latency_ms,x.input_tokens,x.output_tokens,x.cost,x.error,e.score,e.passed,e.evaluator_type,e.rationale FROM test_runs r JOIN benchmark_tasks t ON t.id=r.task_id JOIN benchmark_categories c ON c.id=t.category_id JOIN models m ON m.id=r.model_id JOIN providers p ON p.id=m.provider_id LEFT JOIN model_responses x ON x.run_id=r.id LEFT JOIN evaluation_results e ON e.run_id=r.id WHERE r.session_id=? ORDER BY r.started_at`).all(session.id);
-  if(req.query.format==='csv'){const cols=Object.keys(rows[0]??{id:'',status:''});const q=(v)=>`"${String(v??'').replace(/"/g,'""')}"`;return res.type('text/csv').send([cols.join(','),...rows.map((r)=>cols.map((c)=>q(r[c])).join(','))].join('\r\n'));}
+  if(req.query.format==='csv'){const cols=Object.keys(rows[0]??{id:'',status:''});return res.type('text/csv').send([cols.join(','),...rows.map((r)=>cols.map((c)=>csvCell(r[c])).join(','))].join('\r\n'));}
   res.json({session:{...session,manifest:safeJson(session.run_manifest,{})},runs:rows,exportedAt:now()});
 });
 
 app.use('/api',(req,res)=>res.status(404).json({error:'API 路由不存在。'}));
-app.use((error,_req,res,_next)=>{console.error('[api-error]',error.message);if(res.headersSent)return;res.status(error.status??500).json({error:error.status?error.message:'服务器内部错误。'});});
+app.use((error, req, res, _next) => {
+  console.error('[api-error]', req.requestId, error.message);
+  if (res.headersSent) return;
+  res.status(error.status ?? 500).json({ error: error.status ? error.message : '服务器内部错误。', requestId: req.requestId });
+});
 if (existsSync(dist)) {
   app.use(express.static(dist, {
     index: false,

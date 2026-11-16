@@ -34,7 +34,8 @@
         ├── src/schema.sql    19 张表、外键、唯一约束、索引
         ├── src/scoring.mjs   10 种确定性评分规则
         ├── src/judge.mjs     AI 裁判：匿名化、Rubric、严格 JSON、聚合
-        ├── src/providers.mjs 供应商适配器 + 模型列表发现
+        ├── src/providers.mjs 供应商适配器 + 模型列表发现 + URL 边界校验
+        ├── src/reproducibility.mjs 确定性种子与 Fisher–Yates 题目排序
         ├── src/seed-data.mjs 203 道原创题（15 分类）
         └── src/supplemental-data.mjs 补充题库
 ```
@@ -45,7 +46,8 @@
 
 ```text
 用户点击「运行」
-  → POST /api/test-sessions { mode, taskIds, modelIds, repeats }
+  → POST /api/test-sessions { mode, taskIds, modelIds, repeats, seed? }
+  → 为随机模式生成/接收稳定 seed，并写入 settings 与 Run Manifest
   → 展开为 N×M 个 (task, model) 任务
   → 创建 test_sessions 行 + 逐条 test_runs 行（status=running）
   → 同时写入不可变 run_manifest 1.1.0：题目全文/参考答案/覆盖提示词/模型/单价/评分/环境快照 + SHA-256
@@ -55,7 +57,7 @@
       → scoring.mjs 按 scoring_rule 评分
       → evaluation_results（evaluator_type='rule'）
       → test_runs.status = success | failed
-  → 返回 { sessionId, results }
+  → 返回 { sessionId, seed?, results }
 ```
 
 失败隔离：单个 (task, model) 失败只标记该 run 为 `failed`，不抛出整批异常。
@@ -133,9 +135,9 @@ GET /api/leaderboard
 
 ## 信任边界与当前限制
 
-- 只绑定 `127.0.0.1`，**无多租户认证**；不得在未补认证、TLS、CSRF/来源校验与部署加固时暴露到公网。
+  - 只绑定 `127.0.0.1`，**无多租户认证**；不得在未补认证、TLS、CSRF/来源校验与部署加固时暴露到公网。
 - 提示词、导入数据、模型回答均为**不可信文本**；页面通过 React 文本节点与 `<pre>` 渲染，不使用 `dangerouslySetInnerHTML`。
-- 供应商地址是用户可配置项，会引发服务端请求；远程/云部署必须增加 SSRF 防护与允许列表。
+- 供应商地址是用户可配置项，会引发服务端请求；当前拒绝非 HTTP(S)、带凭据和常见云元数据地址；远程/云部署仍必须增加 DNS 解析后的私网允许列表与认证。
 - **没有代码沙箱**：编程题只评估文本，不在任何进程执行模型生成的代码。
 - 已实现 OpenAI 兼容、Anthropic Messages、Gemini `generateContent`、Ollama、LM Studio 与显式 Mock；各品牌专有特性（prompt caching、grounding、tool use 等）未实现。
 - 模型列表发现已实现（`/api/providers/:id/models`），但依赖供应商返回标准格式。

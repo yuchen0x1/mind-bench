@@ -18,18 +18,21 @@ function scoreConfiguredAnswer(rule, expected, response) {
     return { score: passed ? 100 : 0, passed, rationale: passed ? '与题目配置的目标答案标准化后完全一致。' : '与目标答案不完全一致。' };
   }
   if (method === 'contains') {
-    const targets = config.targets ?? [config.target ?? expected];
-    const found = targets.filter((target) => normalized.includes(norm(target)));
+    if (config.targets !== undefined && !Array.isArray(config.targets)) return { score: null, passed: null, rationale: '包含规则的 targets 必须是数组。' };
+    const targets = (Array.isArray(config.targets) ? config.targets : [config.target ?? expected]).map(norm).filter(Boolean);
+    const found = targets.filter((target) => normalized.includes(target));
     const score = targets.length ? Math.round(found.length / targets.length * 100) : null;
     return { score, passed: score === 100, rationale: `命中 ${found.length}/${targets.length} 个允许目标文本。` };
   }
   if (method === 'one_of') {
-    const targets = (config.targets ?? []).map(norm).filter(Boolean);
+    const targets = (Array.isArray(config.targets) ? config.targets : [config.target ?? expected]).map(norm).filter(Boolean);
     const passed = targets.some((target) => normalized === target);
     return { score: passed ? 100 : 0, passed, rationale: `与 ${targets.length} 个允许答案之一进行标准化精确比较。` };
   }
   if (method === 'all_keywords' || method === 'any_keywords') {
-    const keywords = (config.keywords ?? String(expected).split('|')).map(norm).filter(Boolean);
+    if (config.keywords !== undefined && !Array.isArray(config.keywords)) return { score: null, passed: null, rationale: '关键词规则的 keywords 必须是数组。' };
+    const rawKeywords = Array.isArray(config.keywords) ? config.keywords : String(expected).split('|');
+    const keywords = rawKeywords.map(norm).filter(Boolean);
     if (!keywords.length) return { score: null, passed: null, rationale: '缺少有效的评分关键词。' };
     const found = keywords.filter((keyword) => normalized.includes(keyword));
     const ratio = found.length / keywords.length;
@@ -37,10 +40,13 @@ function scoreConfiguredAnswer(rule, expected, response) {
     return { score: Math.round(ratio * 100), passed, rationale: `命中 ${found.length}/${keywords.length} 个评分关键词。`, dimensions: keywords.map((keyword) => ({ name: keyword, score: normalized.includes(keyword) ? 100 : 0 })) };
   }
   if (method === 'numeric') {
-    const targets = (config.targets ?? [expected]).map(Number).filter(Number.isFinite);
+    const rawTargets = Array.isArray(config.targets) ? config.targets : [expected];
+    const targets = rawTargets.map(Number).filter(Number.isFinite);
+    const tolerance = Number(config.tolerance ?? 1e-9);
+    if (!Number.isFinite(tolerance) || tolerance < 0) return { score: null, passed: null, rationale: '数值容差配置无效。' };
     const numbers = value.match(/[-+]?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
     if (!targets.length) return { score: null, passed: null, rationale: '缺少数值参考答案。' };
-    const found = targets.filter((target) => numbers.some((actual) => Math.abs(actual - target) <= (config.tolerance ?? 1e-9)));
+    const found = targets.filter((target) => numbers.some((actual) => Math.abs(actual - target) <= tolerance));
     const score = Math.round(100 * found.length / targets.length);
     return { score, passed: score === 100, rationale: `回答中识别到 ${found.length}/${targets.length} 个目标数值。` };
   }
@@ -66,9 +72,11 @@ function scoreConfiguredAnswer(rule, expected, response) {
     }
   }
   if (method === 'word_limit') {
+    const max = Number(config.max);
+    if (!Number.isInteger(max) || max < 1) return { score: null, passed: null, rationale: '字数上限配置无效。' };
     const count = value.trim().split(/\s+/u).filter(Boolean).length;
-    const passed = count <= config.max;
-    return { score: passed ? 100 : Math.max(0, Math.round(100 * config.max / count)), passed, rationale: `按空白分隔统计 ${count} 词，上限 ${config.max} 词。` };
+    const passed = count <= max;
+    return { score: passed ? 100 : Math.max(0, Math.round(100 * max / count)), passed, rationale: `按空白分隔统计 ${count} 词，上限 ${max} 词。` };
   }
   return { score: null, passed: null, rationale: `不支持的评分方式：${method}` };
 }

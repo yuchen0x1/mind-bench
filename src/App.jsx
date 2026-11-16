@@ -741,6 +741,8 @@ export default function App() {
         {activeRun && (
           <motion.div
             className="run-toast"
+            role="status"
+            aria-live="polite"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
@@ -758,6 +760,7 @@ export default function App() {
               className="icon-button"
               onClick={cancelRun}
               title="停止生成"
+              aria-label="停止生成"
             >
               <Square size={14} />
             </button>
@@ -765,6 +768,7 @@ export default function App() {
               className="icon-button"
               onClick={() => navigate("history")}
               title="查看历史"
+              aria-label="查看历史"
             >
               <ArrowRight size={15} />
             </button>
@@ -775,6 +779,8 @@ export default function App() {
         {notice && (
           <motion.div
             className={`toast ${notice.type}`}
+            role={notice.type === "error" ? "alert" : "status"}
+            aria-live={notice.type === "error" ? "assertive" : "polite"}
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
@@ -787,7 +793,7 @@ export default function App() {
               )}
             </span>
             {notice.message}
-            <button className="icon-button" onClick={() => setNotice(null)}>
+            <button className="icon-button" aria-label="关闭提示" onClick={() => setNotice(null)}>
               <X size={14} />
             </button>
           </motion.div>

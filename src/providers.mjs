@@ -1,4 +1,31 @@
-import { decryptSecret, now } from './db.mjs';
+import { decryptSecret } from './db.mjs';
+
+export const PROVIDER_KINDS = [
+  'openai', 'anthropic', 'gemini', 'deepseek', 'zhipu', 'moonshot', 'minimax',
+  'qwen', 'openrouter', 'ollama', 'lmstudio', 'openai-compatible', 'mock',
+];
+
+const BLOCKED_HOSTNAMES = new Set([
+  '0.0.0.0',
+  '169.254.169.254',
+  'metadata.google.internal',
+  'metadata.google.com',
+]);
+
+/** Validate a provider URL before it is persisted or used for an outbound call. */
+export function validateProviderUrl(value, { allowEmpty = true } = {}) {
+  const raw = String(value ?? '').trim();
+  if (!raw && allowEmpty) return { ok: true, value: '' };
+  let url;
+  try { url = new URL(raw); } catch { return { ok: false, error: '供应商地址必须是有效的 HTTP(S) URL。' }; }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    return { ok: false, error: '供应商地址必须为不含用户名和密码的 HTTP(S) URL。' };
+  }
+  if (BLOCKED_HOSTNAMES.has(url.hostname.toLowerCase())) {
+    return { ok: false, error: '供应商地址指向被禁止的元数据或通配地址。' };
+  }
+  return { ok: true, value: url.toString().replace(/\/$/, '') };
+}
 
 export class ProviderError extends Error {
   constructor(message, status = 502) { super(message); this.name = 'ProviderError'; this.status = status; }
@@ -57,8 +84,9 @@ export async function invokeModel(model, prompt, task, signal) {
   if (provider.kind === 'mock') return { text: mockResponse(prompt, task), inputTokens: 0, outputTokens: 0, requestId: '', isMock: true, latencyMs: 8 };
   const key = decryptSecret(model.api_key_cipher);
   let endpoint;
-  try { endpoint = new URL(provider.base_url); } catch { throw new ProviderError('供应商 Base URL 无效。', 400); }
-  if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) throw new ProviderError('供应商地址必须为不含用户名和密码的 HTTP(S) URL。', 400);
+  const validated = validateProviderUrl(provider.base_url, { allowEmpty: false });
+  if (!validated.ok) throw new ProviderError(validated.error, 400);
+  try { endpoint = new URL(validated.value); } catch { throw new ProviderError('供应商 Base URL 无效。', 400); }
   const local = ['127.0.0.1', 'localhost', '[::1]'].includes(endpoint.hostname);
   if (!key && provider.kind !== 'ollama' && !local) throw new ProviderError('该供应商尚未配置 API Key。', 400);
   const started = performance.now();
@@ -137,7 +165,10 @@ export async function listProviderModels(provider) {
   const kind = provider.kind;
   if (kind === 'mock') return { models: [], endpoint: 'mock', note: 'Mock 供应商没有真实模型清单。' };
   const key = decryptSecret(provider.api_key_cipher);
-  const base = String(provider.base_url || KIND_DEFAULT_BASE[kind] || '').replace(/\/+$/, '');
+  const baseCandidate = String(provider.base_url || KIND_DEFAULT_BASE[kind] || '').replace(/\/+$/, '');
+  const validated = validateProviderUrl(baseCandidate, { allowEmpty: false });
+  if (!validated.ok) throw new ProviderError(validated.error, 400);
+  const base = validated.value;
   if (!base) throw new ProviderError('该供应商未配置 Base URL，无法获取模型列表。', 400);
   const signal = AbortSignal.timeout(20000);
   const headers = { accept: 'application/json' };

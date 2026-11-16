@@ -4,7 +4,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 
 - 请求体上限 **8 MiB**。
 - 每 IP 限流 **240 次 / 60 秒**（`429`）。
-- 错误统一返回 `{ "error": "说明" }`。
+- 每个响应带 `x-request-id`；错误统一返回 `{ "error": "说明", "requestId": "..." }`（便于本地日志定位）。
 - 非 `/api` 路径由生产构建的 SPA 接管。
 - 所有 SQL 使用参数绑定；请求字段做长度截断与范围校验。
 
@@ -16,7 +16,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | `{ ok, time, db, concurrency }`。 |
+| GET | `/api/health` | `{ ok, time, db, concurrency, requestId }`。 |
 | GET | `/api/version` | 当前 Web 构建版本、build ID、通道和检查时间；响应禁止缓存。 |
 | GET | `/api/dashboard` | 题目/分类/模型/真实运行统计、最近运行、分类统计、候选榜单、`trend`（近 14 日运行趋势）。 |
 | GET | `/api/categories` | 分类列表、题目难度计数、有真实结果时的均分。 |
@@ -39,7 +39,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | DELETE | `/api/variants/:id` | — | 删除变体。 |
 | GET | `/api/custom-tasks` | `q`, `limit` | 自建/副本题目列表（含 `is_public`、变体计数），供提示词工作台使用。 |
 | POST | `/api/tasks/import` | JSON 数组或 `{ "tasks": [...] }` | 原生格式导入，最多 1000 条；`{ imported, errors:[{index,error}] }`。 |
-| POST | `/api/tasks/import-dataset` | `{ format: "jsonl"\|"csv", content, license, mapping? }` | **外部数据集适配**。`license` 必填，缺失即 400。支持字段别名映射（`question`→`promptZh` 等）。导入题 `verification_status='imported'`。返回 `{ imported, skipped, errors, warnings }`。 |
+| POST | `/api/tasks/import-dataset` | `{ format: "jsonl"\|"csv", content, license, mapping? }` | **外部数据集适配**。`license` 必填，缺失即 400。支持字段别名映射（`question`→`promptZh` 等）。导入题 `verification_status='imported'`。返回 `{ imported, failed, errors, detected, contentHash }`，`contentHash` 是原始文本 SHA-256。 |
 | GET | `/api/tasks/export` | `category`, `format=json\|csv` | 导出题目与来源元数据。 |
 | POST | `/api/tasks/:id/favorite` | — | 切换收藏，`{ favorite }`。 |
 | GET | `/api/favorites` | — | 本机收藏列表。 |
@@ -57,7 +57,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | GET | `/api/providers/kinds` | 支持的 13 种 kind：`openai`, `anthropic`, `gemini`, `deepseek`, `zhipu`, `moonshot`, `minimax`, `qwen`, `openrouter`, `ollama`, `lmstudio`, `openai-compatible`, `mock`。 |
 | GET | `/api/providers` | `{ providers, models }`；**不返回 Key 明文**，只给 `has_api_key`。 |
 | POST | `/api/providers` | `{ name, kind, baseUrl, apiKey, enabled }`。Key 服务端 AES-256-GCM 加密；`kind='mock'` 时 `base_url` 强制为空。 |
-| PUT | `/api/providers/:id` | 更新；仅当提交非空 `apiKey` 时替换既有 Key。 |
+| PUT | `/api/providers/:id` | 更新；提交 `apiKey`（可为空字符串）时替换或清空既有 Key。供应商类型和 Base URL 会在保存前校验。 |
 | DELETE | `/api/providers/:id` | 存在关联模型或历史记录时 `409`。 |
 | **GET** | **`/api/providers/:id/models`** | **从供应商接口发现模型列表**。按 kind 请求对应端点（OpenAI 兼容 `/models`、Ollama `/api/tags`、Gemini `/v1beta/models`），返回 `{ provider, models:[{id,name}], source }`。供应商未配 Base URL 返回 400，上游失败返回 502。 |
 | POST | `/api/models` | `{ providerId, name, modelId, modelVersion, temperature, maxTokens, timeoutMs, maxRetries, inputCostPerMillion, outputCostPerMillion, enabled, isDefault }`。 |
@@ -66,7 +66,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | DELETE | `/api/models/:id` | 有历史记录时 `409`。 |
 | POST | `/api/models/:id/test-connection` | 连接检查。Mock 检查只表示 Mock 流程可用。 |
 
-> Base URL 会引发**服务器端请求**（潜在 SSRF 面）。单机使用时由你控制；若改为多用户，必须加白名单校验。
+> Base URL 会引发**服务器端请求**。当前会拒绝非 HTTP(S)、带用户名/密码以及常见云元数据/通配地址；内网地址仍属于单机高级配置，改为多用户部署时必须增加 DNS 解析后的私网白名单策略、认证与 CSRF 防护。
 
 ---
 
@@ -102,6 +102,7 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
   "taskIds": ["logic-01"],
   "questionCount": 10,
   "repeats": 3,
+  "seed": "可选：用于随机挑战题目顺序的稳定种子",
   "modelIds": ["model-id"],
   "deferred": true
 }
@@ -113,14 +114,14 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 
 - 单轮最多 300 个「模型 × 题目」任务。
 - 并发受 `MIND_BENCH_CONCURRENCY` 控制（默认 4，上限 8）。
-- `random` / `challenge` / `stability` / `custom` 会打散题目顺序。
+- `random` / `challenge` / `stability` / `custom` 会按 `seed` 使用确定性 Fisher–Yates 打散题目顺序；省略时服务端生成并写入 Run Manifest，便于复跑。
 - `stability` 使用 `repeats` 重复同一批题。
 
 ### 会话与回答
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/sessions?limit=50` | 最近会话（limit ≤ 100）。 |
+| GET | `/api/sessions?limit=50&offset=0` | 最近会话（limit ≤ 100）。响应头 `x-total-count` 与 `x-has-more` 提供分页信息。 |
 | GET | `/api/sessions/:id` | 会话设置、逐条 run/回答/评分，新增 `verdicts`（AI 裁判明细）。 |
 | GET | `/api/sessions/:id/manifest` | 读取该会话的不可变 Run Manifest：题目/模型/评分/环境快照与 SHA-256 完整性摘要。 |
 | POST | `/api/sessions/:id/cancel` | 取消运行中的会话；排队条目保存为 `cancelled`，不再调用供应商；已结束或不存在 `404`。 |
@@ -179,7 +180,7 @@ Run Manifest `1.1.0` 补充 `tasks[].promptZh/promptEn/referenceAnswer/objective
 | GET | `/api/report/:sessionId/export` | 默认 JSON；`?format=csv` 输出 CSV。 |
 | GET | `/api/settings` | 当前设置与并发上限。 |
 | PUT | `/api/settings/:key` | 允许 `score_weights`、`default_model_id`、`minimum_leaderboard_runs`，体为 `{ "value": ... }`。**`score_weights` 已实际接入排行榜加权计算**。 |
-| GET | `/api/audit` | 最近审计事件。 |
+| GET | `/api/audit?limit=100&offset=0` | 审计事件；响应头 `x-total-count` 与 `x-has-more` 提供分页信息。 |
 
 排行榜行字段：
 
