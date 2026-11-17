@@ -12,7 +12,9 @@ export default defineConfig({
   timeout: 30000,
   retries: 0,
   reporter: [['list']],
-  use: { baseURL, trace: 'retain-on-failure' },
+  // Keep E2E selectors deterministic while product auto-detection remains enabled.
+  // The app still follows the real browser/system locale in normal use.
+  use: { baseURL, locale: 'zh-CN', trace: 'retain-on-failure' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'npm run start',
