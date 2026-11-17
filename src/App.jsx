@@ -86,7 +86,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { readLocaleSetting, resolveLocale, writeLocaleSetting } from "./locale.mjs";
+import { useI18n } from "./locale.mjs";
 
 const icons = {
   GitBranch,
@@ -127,6 +127,7 @@ const categoriesMeta = [
 ];
 const navGroups = [
   {
+    key: "workspace",
     label: "工作台",
     items: [
       ["dashboard", "总览", "LayoutDashboard"],
@@ -137,6 +138,7 @@ const navGroups = [
     ],
   },
   {
+    key: "insights",
     label: "洞察",
     items: [
       ["leaderboard", "模型排行榜", "Trophy"],
@@ -145,6 +147,7 @@ const navGroups = [
     ],
   },
   {
+    key: "system",
     label: "系统",
     items: [
       ["providers", "模型管理", "Settings2"],
@@ -269,6 +272,7 @@ const useUpdateStatus = () => {
 };
 
 export default function App() {
+  const { locale, t } = useI18n();
   const [page, setPage] = useState(
     () => location.hash.slice(1).split("/")[0] || "dashboard",
   );
@@ -354,7 +358,7 @@ export default function App() {
     repeats,
   }) => {
     if (!selectedModels.length) {
-      showNotice("请先在模型管理中启用至少一个模型。", "error");
+      showNotice(t("notice.enableModel", "请先在模型管理中启用至少一个模型。"), "error");
       navigate("providers");
       return;
     }
@@ -384,7 +388,7 @@ export default function App() {
         { method: "POST", body: JSON.stringify(body) },
       );
       setActiveRun(started.sessionId);
-      showNotice("测试已加入运行队列，可在右下角查看进度。", "success");
+      showNotice(t("notice.queued", "测试已加入运行队列，可在右下角查看进度。"), "success");
     } catch (e) {
       showNotice(e.message, "error");
     }
@@ -396,7 +400,7 @@ export default function App() {
         method: "POST",
         body: "{}",
       });
-      showNotice("已发送停止请求。");
+      showNotice(t("notice.cancelled", "已发送停止请求。"));
     } catch (e) {
       showNotice(e.message, "error");
     }
@@ -433,7 +437,7 @@ export default function App() {
     [categories],
   );
   return (
-    <div className="app-shell" data-theme={theme}>
+    <div className="app-shell" data-theme={theme} lang={locale}>
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">
@@ -448,7 +452,7 @@ export default function App() {
           </div>
           <button
             className="icon-button sidebar-close"
-            aria-label="关闭导航"
+            aria-label={t("top.close", "关闭导航")}
             onClick={() => setSidebarOpen(false)}
           >
             <X size={17} />
@@ -459,16 +463,16 @@ export default function App() {
             <Atom size={17} />
           </div>
           <div>
-            <b>评测工作台</b>
-            <span>本地私有空间</span>
+          <b>{t("brand.workspace", "评测工作台")}</b>
+          <span>{t("brand.local", "本地私有空间")}</span>
           </div>
           <ChevronDown size={14} />
         </div>
         <div className="sidebar-scroll">
-          <div className="nav-label">WORKSPACE</div>
+          <div className="nav-label">{t("nav.workspace", "工作台").toUpperCase()}</div>
           {navGroups.map((group) => (
             <div key={group.label} className="nav-group">
-              <div className="nav-caption">{group.label}</div>
+              <div className="nav-caption">{t(`nav.${group.key}`, group.label)}</div>
               {group.items.map(([key, label, icon]) => (
                 <button
                   key={key}
@@ -476,7 +480,7 @@ export default function App() {
                   onClick={() => navigate(key)}
                 >
                   <Icon name={icon} size={16} />
-                  <span>{label}</span>
+                  <span>{t(`nav.${key}`, label)}</span>
                   {key === "tasks" && (
                     <em>{formatNum(dashboard?.stats?.taskCount)}</em>
                   )}
@@ -486,11 +490,11 @@ export default function App() {
           ))}
           <div className="nav-group category-nav">
             <div className="nav-caption">
-              能力分类{" "}
+              {t("nav.categories", "能力分类")} {" "}
               <button
                 className="text-icon"
                 onClick={() => navigate("tasks")}
-                aria-label="查看全部分类"
+                aria-label={t("nav.categories", "查看全部分类")}
               >
                 <ArrowRight size={13} />
               </button>
@@ -514,14 +518,14 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="local-badge">
             <span className="live-dot" />
-            <span>本地运行 · 数据不出设备</span>
+            <span>{t("brand.online", "本地运行 · 数据不出设备")}</span>
             <LockKeyhole size={13} />
           </div>
           <button className="profile-card" onClick={() => navigate("settings")}>
             <div className="avatar">M</div>
             <div>
               <b>MIND BENCH</b>
-              <span>个人研究者</span>
+              <span>{t("brand.researcher", "个人研究者")}</span>
             </div>
             <MoreHorizontal size={16} />
           </button>
@@ -530,7 +534,7 @@ export default function App() {
       {sidebarOpen && (
         <button
           className="sidebar-scrim"
-          aria-label="关闭导航"
+          aria-label={t("top.close", "关闭导航")}
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -542,7 +546,7 @@ export default function App() {
           <div className="topbar-left">
             <button
               className="icon-button mobile-menu"
-              aria-label="打开导航"
+              aria-label={t("top.open", "打开导航")}
               onClick={() => setSidebarOpen(true)}
             >
               <Menu size={18} />
@@ -550,7 +554,7 @@ export default function App() {
             <div className="breadcrumb">
               <span>Workspace</span>
               <ChevronRight size={13} />
-              <strong>{pageLabel(page)}</strong>
+              <strong>{pageLabel(page, t)}</strong>
             </div>
           </div>
           <div className="topbar-right">
@@ -559,7 +563,7 @@ export default function App() {
             </div>
             <button
               className="icon-button theme-toggle"
-              title="切换主题"
+              title={t("top.theme", "切换主题")}
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
@@ -723,6 +727,7 @@ export default function App() {
                   setTheme={setTheme}
                   updateStatus={updateStatus}
                   checkForUpdate={checkForUpdate}
+                  locale={locale}
                 />
               )}
             </motion.div>
@@ -731,10 +736,10 @@ export default function App() {
         <footer className="footer">
           <span>© 2026 MIND BENCH</span>
           <span>
-            <span className="live-dot" /> 仅展示可追溯的真实评测 · 不测量人类 IQ
+            <span className="live-dot" /> {t("footer.traceable", "仅展示可追溯的真实评测 · 不测量人类 IQ")}
           </span>
           <button onClick={() => navigate("research")}>
-            研究方法 <ArrowRight size={12} />
+            {t("footer.method", "研究方法")} <ArrowRight size={12} />
           </button>
         </footer>
       </main>
@@ -752,24 +757,24 @@ export default function App() {
               <LoaderCircle size={17} />
             </div>
             <div>
-              <b>正在运行模型测试</b>
+              <b>{t("run.running", "正在运行模型测试")}</b>
               <span>
-                任务已保存 · 最多并发 {modelsData?.concurrencyLimit ?? 4}
+                {t("run.saved", "任务已保存 · 最多并发 {count}", { count: modelsData?.concurrencyLimit ?? 4 })}
               </span>
             </div>
             <button
               className="icon-button"
               onClick={cancelRun}
-              title="停止生成"
-              aria-label="停止生成"
+              title={t("run.stop", "停止生成")}
+              aria-label={t("run.stop", "停止生成")}
             >
               <Square size={14} />
             </button>
             <button
               className="icon-button"
               onClick={() => navigate("history")}
-              title="查看历史"
-              aria-label="查看历史"
+              title={t("run.history", "查看历史")}
+              aria-label={t("run.history", "查看历史")}
             >
               <ArrowRight size={15} />
             </button>
@@ -794,7 +799,7 @@ export default function App() {
               )}
             </span>
             {notice.message}
-            <button className="icon-button" aria-label="关闭提示" onClick={() => setNotice(null)}>
+            <button className="icon-button" aria-label={t("top.close", "关闭提示")} onClick={() => setNotice(null)}>
               <X size={14} />
             </button>
           </motion.div>
@@ -803,26 +808,27 @@ export default function App() {
     </div>
   );
 }
-function pageLabel(key) {
-  return (
+function pageLabel(key, t = (_key, fallback) => fallback) {
+  const [messageKey, fallback] = (
     {
-      dashboard: "总览",
-      tasks: "题库探索",
-      task: "测试题目",
-      challenges: "测试中心",
-      compare: "模型对比",
-      promptlab: "提示词工作台",
-      model: "模型详情",
-      leaderboard: "模型排行榜",
-      history: "测试历史",
-      report: "测试报告",
-      analytics: "数据分析",
-      providers: "模型管理",
-      import: "题库导入",
-      research: "研究资料",
-      settings: "系统设置",
-    }[key] ?? "总览"
+      dashboard: ["nav.dashboard", "总览"],
+      tasks: ["nav.tasks", "题库探索"],
+      task: ["nav.tasks", "测试题目"],
+      challenges: ["nav.challenges", "测试中心"],
+      compare: ["nav.compare", "模型对比"],
+      promptlab: ["nav.promptlab", "提示词工作台"],
+      model: ["nav.providers", "模型详情"],
+      leaderboard: ["nav.leaderboard", "模型排行榜"],
+      history: ["nav.history", "测试历史"],
+      report: ["nav.history", "测试报告"],
+      analytics: ["nav.analytics", "数据分析"],
+      providers: ["nav.providers", "模型管理"],
+      import: ["nav.import", "题库导入"],
+      research: ["nav.research", "研究资料"],
+      settings: ["settings.title", "系统设置"],
+    }[key] ?? ["nav.dashboard", "总览"]
   );
+  return t(messageKey, fallback);
 }
 function PageHeader({ eyebrow, title, subtitle, actions, children }) {
   return (
@@ -5284,6 +5290,7 @@ function ResearchPage() {
 }
 
 function UpdateBanner({ status, dismissed, onRefresh, onDismiss }) {
+  const { t } = useI18n();
   if (!status.available || dismissed) return null;
   return (
     <div className="update-banner" role="status">
@@ -5291,15 +5298,15 @@ function UpdateBanner({ status, dismissed, onRefresh, onDismiss }) {
         <RefreshCw size={16} />
       </div>
       <div className="update-banner-copy">
-        <b>发现新的 MIND BENCH 部署</b>
+        <b>{t("update.title", "发现新的 MIND BENCH 部署")}</b>
         <span>
           当前 {status.currentVersion} · 新版本 {status.serverVersion}。刷新页面后加载新版本，当前运行中的测试不会被中断。
         </span>
       </div>
       <button className="button button-primary button-small" onClick={onRefresh}>
-        立即刷新
+        {t("update.refresh", "立即刷新")}
       </button>
-      <button className="icon-button" aria-label="稍后提醒" title="稍后提醒" onClick={onDismiss}>
+      <button className="icon-button" aria-label={t("update.dismiss", "稍后提醒")} title={t("update.dismiss", "稍后提醒")} onClick={onDismiss}>
         <X size={14} />
       </button>
     </div>
@@ -5307,8 +5314,7 @@ function UpdateBanner({ status, dismissed, onRefresh, onDismiss }) {
 }
 
 function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate }) {
-  const [localeSetting, setLocaleSetting] = useState(() => readLocaleSetting());
-  const effectiveLocale = resolveLocale(localeSetting, typeof navigator === "undefined" ? [] : navigator.languages || [navigator.language]);
+  const { locale: effectiveLocale, setting: localeSetting, t, setLocaleSetting } = useI18n();
   const { data, refresh } = useApi("/api/settings");
   const [audit, setAudit] = useState([]);
   useEffect(() => {
@@ -5354,8 +5360,8 @@ function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate 
     <>
       <PageHeader
         eyebrow="SYSTEM CONFIGURATION / LOCAL INSTANCE"
-        title="系统设置"
-        subtitle="个人本地实例 · SQLite 持久化 · API 服务绑定 127.0.0.1。"
+        title={t("settings.title", "系统设置")}
+        subtitle={t("settings.subtitle", "个人本地实例 · SQLite 持久化 · API 服务绑定 127.0.0.1。")}
       />
       <div className="settings-grid">
         <section className="panel settings-panel update-settings-panel">
@@ -5370,27 +5376,27 @@ function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate 
           </div>
           <div className="setting-row">
             <div>
-              <b>当前版本</b>
+              <b>{t("settings.version", "当前版本")}</b>
               <span>{updateStatus.currentVersion} · 构建 {updateStatus.currentBuildId}</span>
             </div>
-            <span className="run-status status-completed"><i />稳定通道</span>
+            <span className="run-status status-completed"><i />{t("settings.stable", "稳定通道")}</span>
           </div>
           <div className="setting-row">
             <div>
-              <b>{updateStatus.available ? "发现 " + updateStatus.serverVersion : "更新状态"}</b>
+              <b>{updateStatus.available ? "发现 " + updateStatus.serverVersion : t("settings.update", "更新状态")}</b>
               <span>
                 {updateStatus.error
                   ? "检查失败：" + updateStatus.error
                   : updateStatus.available
                     ? "新构建已部署，刷新后加载；不会自动下载或中断正在运行的测试。"
                     : updateStatus.checkedAt
-                      ? "已检查：" + new Date(updateStatus.checkedAt).toLocaleString("zh-CN")
-                      : "尚未检查"}
+                      ? "已检查：" + new Date(updateStatus.checkedAt).toLocaleString(effectiveLocale)
+                      : t("settings.noCheck", "尚未检查")}
               </span>
             </div>
             <button className="button button-small button-ghost" onClick={checkForUpdate} disabled={updateStatus.checking}>
               <RefreshCw size={12} className={updateStatus.checking ? "spin" : ""} />
-              {updateStatus.checking ? "检查中" : "检查更新"}
+              {updateStatus.checking ? t("settings.checking", "检查中") : t("settings.check", "检查更新")}
             </button>
           </div>
         </section>
@@ -5406,24 +5412,24 @@ function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate 
           </div>
           <div className="setting-row">
             <div>
-              <b>语言 / Language</b>
-              <span>自动模式按浏览器或系统语言选择界面，当前：{effectiveLocale}</span>
+              <b>{t("settings.language", "语言 / Language")}</b>
+              <span>{t("settings.languageCurrent", "自动模式按浏览器或系统语言选择界面，当前：{effectiveLocale}", { locale: effectiveLocale })}</span>
             </div>
             <select
               aria-label="语言 / Language"
               value={localeSetting}
-              onChange={(event) => setLocaleSetting(writeLocaleSetting(event.target.value))}
+              onChange={(event) => setLocaleSetting(event.target.value)}
             >
-              <option value="auto">自动 / Auto</option>
+              <option value="auto">{t("settings.auto", "自动 / Auto")}</option>
               <option value="zh-CN">简体中文</option>
               <option value="en-US">English</option>
             </select>
           </div>
           <div className="setting-row">
             <div>
-              <b>界面主题</b>
+              <b>{t("settings.theme", "界面主题")}</b>
               <span>
-                当前主题：{theme === "dark" ? "深色实验室" : "浅色工作台"}
+                当前主题：{theme === "dark" ? t("settings.dark", "深色实验室") : t("settings.light", "浅色工作台")}
               </span>
             </div>
             <button
@@ -5431,7 +5437,7 @@ function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate 
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-              切换主题
+              {t("settings.toggleTheme", "切换主题")}
             </button>
           </div>
           <div className="setting-row">
@@ -5439,7 +5445,7 @@ function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate 
               <b>模型并发上限</b>
               <span>为避免供应商限流，并发数量有上限</span>
             </div>
-            <code>{data?.concurrencyLimit ?? 4} 并发</code>
+              <code>{data?.concurrencyLimit ?? 4} {t("settings.concurrency", "并发")}</code>
           </div>
           <div className="setting-row">
             <div>
