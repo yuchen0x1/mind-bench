@@ -86,6 +86,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { readLocaleSetting, resolveLocale, writeLocaleSetting } from "./locale.mjs";
 
 const icons = {
   GitBranch,
@@ -5306,6 +5307,8 @@ function UpdateBanner({ status, dismissed, onRefresh, onDismiss }) {
 }
 
 function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate }) {
+  const [localeSetting, setLocaleSetting] = useState(() => readLocaleSetting());
+  const effectiveLocale = resolveLocale(localeSetting, typeof navigator === "undefined" ? [] : navigator.languages || [navigator.language]);
   const { data, refresh } = useApi("/api/settings");
   const [audit, setAudit] = useState([]);
   useEffect(() => {
@@ -5400,6 +5403,21 @@ function SettingsPage({ onNotice, theme, setTheme, updateStatus, checkForUpdate 
               <b>应用外观</b>
               <small>调整主题以适应工作环境</small>
             </div>
+          </div>
+          <div className="setting-row">
+            <div>
+              <b>语言 / Language</b>
+              <span>自动模式按浏览器或系统语言选择界面，当前：{effectiveLocale}</span>
+            </div>
+            <select
+              aria-label="语言 / Language"
+              value={localeSetting}
+              onChange={(event) => setLocaleSetting(writeLocaleSetting(event.target.value))}
+            >
+              <option value="auto">自动 / Auto</option>
+              <option value="zh-CN">简体中文</option>
+              <option value="en-US">English</option>
+            </select>
           </div>
           <div className="setting-row">
             <div>
