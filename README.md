@@ -34,7 +34,7 @@
 
 ## 第一次使用：5 分钟走通流程
 
-1. 安装 **Node.js 24+**。下载 Release 中的 `mind-bench-0.3.0.tar.gz` 并解压。
+1. 安装 **Node.js 24+**。从[最新发行页](https://github.com/yuchen0x1/mind-bench/releases/latest) 下载 `mind-bench-<版本>.tar.gz` 并解压。
 2. 在解压目录执行 `npm ci --omit=dev`，再执行 `npm start`，打开 <http://127.0.0.1:3000>。
 3. 在「模型管理」添加供应商和模型。先体验可选「Mock 沙盒」，真实评测再配置自己的供应商地址与 API Key。
 4. 打开「题库探索」→ 选择一题 → 勾选模型 →「发送测试」。也可在「测试中心」组织批量测试。
