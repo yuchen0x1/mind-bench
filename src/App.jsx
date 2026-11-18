@@ -2957,6 +2957,10 @@ function modeLabel(mode) {
 function ReportPage({ id, onBack, onNotice }) {
   const { data, error, loading, refresh } = useApi(`/api/sessions/${id}`, [id]);
   const judgesReq = useApi("/api/judges");
+  const historyReq = useApi("/api/sessions?limit=100");
+  const [baselineId, setBaselineId] = useState("");
+  const [comparison, setComparison] = useState(null);
+  const [comparing, setComparing] = useState(false);
   const [manual, setManual] = useState({});
   const [tab, setTab] = useState("runs");
   const [judgeIds, setJudgeIds] = useState([]);
@@ -3088,6 +3092,18 @@ function ReportPage({ id, onBack, onNotice }) {
       JSON.stringify(result, null, 2),
     );
   };
+  const compareBaseline = async () => {
+    setComparing(true);
+    setComparison(null);
+    try {
+      const result = await request(`/api/sessions/${id}/compare?baseline=${encodeURIComponent(baselineId)}`);
+      setComparison(result);
+    } catch (e) {
+      onNotice(e.message, "error");
+    } finally {
+      setComparing(false);
+    }
+  };
   const submitScore = async (runId) => {
     try {
       await request(`/api/runs/${runId}/evaluation`, {
@@ -3172,6 +3188,33 @@ function ReportPage({ id, onBack, onNotice }) {
         <div className="panel report-progress" role="status">
           <RunStatus status={data.session.status} />
           <span>已结束 {runs.filter((run) => run.status !== "running").length} 条运行 · 报告自动刷新中</span>
+        </div>
+      )}
+      {!running && (
+        <div className="panel" style={{ padding: 20, marginBottom: 20 }}>
+          <h2 style={{ marginTop: 0 }}>回归基线比较</h2>
+          <p>仅比较同题目、同模型与同评分协议的真实已评分运行；无可比样本会标记为阻断。</p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <label htmlFor="regression-baseline">基线会话</label>
+            <select id="regression-baseline" value={baselineId} onChange={(event) => { setBaselineId(event.target.value); setComparison(null); }}>
+              <option value="">选择历史会话</option>
+              {(historyReq.data ?? []).filter((session) => session.id !== id && session.status !== "running").map((session) => (
+                <option key={session.id} value={session.id}>{session.name} · {new Date(session.started_at).toLocaleString("zh-CN")}</option>
+              ))}
+            </select>
+            <button className="button button-ghost" disabled={!baselineId || comparing} onClick={compareBaseline}>
+              <ArrowLeftRight size={14} />{comparing ? "比较中…" : "比较并检查降幅"}
+            </button>
+          </div>
+          {comparison && (
+            <div role="status" aria-live="polite" style={{ marginTop: 16 }}>
+              <strong>门禁：{({ pass: "通过", warn: "警告", fail: "失败", blocked: "阻断" })[comparison.status]}</strong>
+              <p>可比 {comparison.comparableCount} 项 · 排除 {comparison.excludedCount} 项 · 单项最大允许降幅 {comparison.threshold.maxScoreDrop} 分</p>
+              <div className="table-scroll"><table><thead><tr><th>题目 / 模型</th><th>基线</th><th>候选</th><th>变化</th><th>状态与原因</th></tr></thead><tbody>
+                {comparison.rows.map((row) => <tr key={`${row.taskId}-${row.modelId}`}><td>{row.taskId} / {row.modelId}</td><td>{row.baselineScore?.toFixed(1) ?? "—"}</td><td>{row.candidateScore?.toFixed(1) ?? "—"}</td><td>{row.delta === null ? "—" : row.delta.toFixed(1)}</td><td>{row.reasons.length ? row.reasons.join("；") : row.status === "fail" ? "降幅超出阈值" : "可比"}</td></tr>)}
+              </tbody></table></div>
+            </div>
+          )}
         </div>
       )}
       <div className="report-kpis">

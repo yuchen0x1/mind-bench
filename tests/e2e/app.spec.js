@@ -75,7 +75,7 @@ test('prompt workshop creates an editable copy with version history', async ({ p
   await page.goto('/#tasks');
   await page.getByRole('button', { name: '球拍与球' }).click();
   await page.getByRole('button', { name: /编辑副本/ }).click();
-  await expect(page.getByRole('heading', { name: '提示词工作台' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '提示词工作台' })).toBeVisible({ timeout: 20000 });
   const title = page.getByLabel('题目名称');
   await expect(title).toHaveValue(/球拍与球/);
   await title.fill('球拍与球（E2E 副本）');

@@ -75,3 +75,23 @@ test('a report can cancel a batch and stops polling after cancellation', async (
     expect(polls).toBe(0);
   } finally { await run.close(); }
 });
+
+test('report comparison shows a blocked gate for Mock-only history', async ({ page, request }) => {
+  const provider = await (await request.post('/api/providers', { data: { name: 'Comparison Mock', kind: 'mock' } })).json();
+  const model = await (await request.post('/api/models', { data: {
+    providerId: provider.provider.id, name: 'Comparison model', modelId: 'compare-mock',
+  } })).json();
+  const create = async (name) => {
+    const response = await request.post('/api/test-runs', { data: { taskId: 'math-01', modelIds: [model.model.id], name } });
+    expect(response.status()).toBe(201);
+    return (await response.json()).sessionId;
+  };
+  const baseline = await create('Comparison baseline');
+  const candidate = await create('Comparison candidate');
+  await page.goto(`/#report/${candidate}`);
+  await expect(page.getByRole('heading', { name: '回归基线比较' })).toBeVisible();
+  await page.getByLabel('基线会话').selectOption(baseline);
+  await page.getByRole('button', { name: '比较并检查降幅' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '门禁：阻断' })).toContainText('可比 0 项');
+  await expect(page.getByText('包含失败、Mock、外部回答或未评分运行')).toBeVisible();
+});

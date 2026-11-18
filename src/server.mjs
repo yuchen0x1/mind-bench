@@ -9,6 +9,7 @@ import { scoreAnswer, scoreToMindBenchScore } from './scoring.mjs';
 import { checkProviderConnection, invokeModel, listProviderModels, PROVIDER_KINDS, validateProviderUrl } from './providers.mjs';
 import { aggregateVerdicts, buildJudgePrompt, parseVerdict, rubricFor, verdictRationale } from './judge.mjs';
 import { seededShuffle } from './reproducibility.mjs';
+import { compareSessions } from './regression.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -662,6 +663,26 @@ app.get('/api/sessions/:id',(req,res)=>{
 app.get('/api/sessions/:id/manifest',(req,res)=>{
   const session=db.prepare('SELECT id,name,mode,started_at,completed_at,run_manifest FROM test_sessions WHERE id=?').get(req.params.id);if(!session)return res.status(404).json({error:'找不到测试记录。'});
   res.json({session:{id:session.id,name:session.name,mode:session.mode,started_at:session.started_at,completed_at:session.completed_at},manifest:safeJson(session.run_manifest,{})});
+});
+app.get('/api/sessions/:id/compare',(req,res)=>{
+  const baselineId = String(req.query.baseline ?? '');
+  if (!baselineId || baselineId === req.params.id) return res.status(400).json({error:'请提供不同于候选会话的 baseline ID。'});
+  const load = (id) => {
+    const session = db.prepare('SELECT id,status,run_manifest FROM test_sessions WHERE id=?').get(id);
+    if (!session) return null;
+    const runs = db.prepare(`SELECT r.task_id,r.model_id,r.status,r.is_mock,r.is_external,e.score
+      FROM test_runs r LEFT JOIN evaluation_results e ON e.run_id=r.id WHERE r.session_id=?`).all(id);
+    return { id, status: session.status, manifest: safeJson(session.run_manifest, {}), runs };
+  };
+  const baseline = load(baselineId);
+  const candidate = load(req.params.id);
+  if (!baseline || !candidate) return res.status(404).json({error:'找不到基线或候选会话。'});
+  if (['running'].includes(baseline.status) || ['running'].includes(candidate.status)) return res.status(409).json({error:'请在两个会话都结束后比较。'});
+  try {
+    res.json({ baselineId, candidateId: candidate.id, ...compareSessions(baseline,candidate,{maxScoreDrop:req.query.maxScoreDrop ?? 5}) });
+  } catch (error) {
+    res.status(400).json({error:error.message});
+  }
 });
 app.get('/api/runs/:id',(req,res)=>{
   const run=db.prepare(`SELECT r.*,t.title AS task_title,t.prompt_zh,t.reference_answer,t.category_id,c.name AS category_name,m.name AS model_name,m.model_id AS model_identifier,p.name AS provider_name,x.raw_text,x.latency_ms,x.input_tokens,x.output_tokens,x.cost,x.error,e.evaluator_type,e.score,e.passed,e.dimensions,e.rationale,e.judge_model FROM test_runs r JOIN benchmark_tasks t ON t.id=r.task_id JOIN benchmark_categories c ON c.id=t.category_id JOIN models m ON m.id=r.model_id JOIN providers p ON p.id=m.provider_id LEFT JOIN model_responses x ON x.run_id=r.id LEFT JOIN evaluation_results e ON e.run_id=r.id WHERE r.id=?`).get(req.params.id);if(!run)return res.status(404).json({error:'找不到测试结果。'});res.json({...run,isMock:Boolean(run.is_mock),isExternal:Boolean(run.is_external),score:run.score===null?null:Number(run.score),passed:run.passed===null?null:Boolean(run.passed),dimensions:safeJson(run.dimensions,[])});

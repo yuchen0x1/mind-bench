@@ -48,8 +48,8 @@
 
 | 编号 | 升级项 | 分类 | 优先级 | 竞品参考 | 实施边界与验收标准 |
 |---|---|---|---|---|---|
-| EV-032 | 基于 Manifest 的回归基线 | 核心功能 | P1 | promptfoo、OpenAI Evals | 选择基线/候选会话，仅同题目/模型/评分协议可比，输出 per-task diff |
-| EV-033 | 回归质量门禁 | 自动化 | P1 | promptfoo CI | 配置分数下降、失败率、延迟、成本阈值，返回 pass/warn/fail |
+| EV-032 | 基于 Manifest 的回归基线 | 核心功能 | P1 | promptfoo、OpenAI Evals | 已实现只读 API：同题目/模型/协议比较并输出逐项差异；界面入口待做 |
+| EV-033 | 回归质量门禁 | 自动化 | P1 | promptfoo CI | 已实现可调分数降幅阈值和 pass/warn/fail/blocked；失败率、延迟、成本阈值待做 |
 | EV-034 | 运行复跑入口 | 核心功能 | P1 | HELM run spec、MLflow | 从 manifest 复制配置创建新会话，明确旧/新版本关系 |
 | EV-035 | 版本/清单差异视图 | UX | P2 | HELM/MLflow | 显示题目、模型参数、权重、评分器变更 |
 | EV-036 | 路由级代码分割 | 性能 | P2 | Vite/React 生态 | 首屏 JS 降至 500 kB gzip 前的可解释预算，E2E 不回归 |

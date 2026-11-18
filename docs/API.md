@@ -124,9 +124,12 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | GET | `/api/sessions?limit=50&offset=0` | 最近会话（limit ≤ 100）。响应头 `x-total-count` 与 `x-has-more` 提供分页信息。 |
 | GET | `/api/sessions/:id` | 会话设置、逐条 run/回答/评分，新增 `verdicts`（AI 裁判明细）。 |
 | GET | `/api/sessions/:id/manifest` | 读取该会话的不可变 Run Manifest：题目/模型/评分/环境快照与 SHA-256 完整性摘要。 |
+| GET | `/api/sessions/:id/compare?baseline=<会话ID>&maxScoreDrop=5` | 以路径中的会话为候选，按题目和模型与基线比较。返回 `pass`、`warn`、`fail` 或 `blocked`、逐项分数变化及排除原因；不会重新调用模型。阈值为 0—100 分。 |
 | POST | `/api/sessions/:id/cancel` | 取消运行中的会话；排队条目保存为 `cancelled`，不再调用供应商；已结束或不存在 `404`。 |
 | GET | `/api/runs/:id` | 单条运行详情：提示词、原始回答、Token、耗时、费用、评分、评分理由、`judge_model`。 |
 | PUT | `/api/runs/:id/evaluation` | 人工评分：`{ score: 0..100, passThreshold: 0..100, rationale }`。写入 `evaluator_type='human'`。 |
+
+比较接口会验证两份运行清单的 SHA-256，并要求评分协议、题目快照、模型身份与生成参数、提示词覆盖配置及重复次数一致。失败、Mock、外部回答或未评分运行均不进入门禁。没有可比样本时返回 `blocked`；有可比样本但部分覆盖被排除时返回 `warn`；任何可比项降幅超过阈值时返回 `fail`。结果属于本机已保存实验的比较，不代表真实模型质量已经经过外部验证。
 
 ---
 

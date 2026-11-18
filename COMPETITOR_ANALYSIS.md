@@ -1,5 +1,31 @@
 # MIND BENCH 竞品与相关开源项目对标
 
+## 2026-11-18 增量复查：另 15 个项目
+
+本轮用 GitHub 官方仓库 API 分别读取下列项目的仓库元数据、README、根目录源码入口、最新可见 Release、一个近期开放 Issue 与最新提交。Stars/Forks 和推送时间是 2026-11-18 的快照；Release 标注“无”表示 `releases/latest` 未返回正式版，不代表没有标签。根目录检查只能说明模块入口，不能证明内部功能已经通过本项目的兼容测试。与下文 2026-11-16 的 15 个项目合计为 30 个相关研究对象，其中本节有直接竞品和相邻技术参考；旧 15 项的动态数据未在本轮重查。
+
+| 项目与角色 | Stars / Forks；最近推送 UTC | 许可证；最新可见 Release | README / 源码入口与本项目可借鉴点 | 近期 Issue / 提交 |
+| --- | --- | --- | --- | --- |
+| [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai) · 直接竞品 | 3281 / 944；11-18 13:44 | MIT；0.3.291 | `src/`、`tests/`、`design/`；任务、求解器、评分器与安全沙箱分层，适合将来扩展 agent 评测 | sandbox 配置文件作用域；`534073d` |
+| [Inspect Evals](https://github.com/UKGovernmentBEIS/inspect_evals) · 数据集参考 | 748 / 486；11-18 10:49 | MIT；v0.29.0 | `register/`、`src/`、`EVAL_REGISTER.md`；2026 年转向外部分布式注册，提示评测题库应有版本与质量审核 | BIRD Mini-Dev 注册；`f79b8be` |
+| [Prompt flow](https://github.com/microsoft/promptflow) · 间接竞品 | 11272 / 1127；11-16 21:33 | MIT；promptflow_1.17.1 | `src/`、`benchmark/`、`examples/`；开发、评测和运行流结合，启发保存评测配置 | 图片 URL 重定向处理；`33a68c9` |
+| [Opik](https://github.com/comet-ml/opik) · 间接竞品 | 23451 / 1965；11-18 14:10 | Apache-2.0；2.2.149 | `apps/`、`sdks/`、`tests_end_to_end/`；实验与追踪分层，启发会话级质量门禁 | KL 平滑非有限值；`8c1e073` |
+| [TruLens](https://github.com/truera/trulens) · 间接竞品 | 3660 / 397；11-16 15:31 | MIT；trulens-2.16.0 | `src/`、`benchmarks/`、`tests/`；README 强调逐步 trace 和版本对比 | Bedrock/Mistral schema；`4014d75` |
+| [Giskard OSS](https://github.com/Giskard-AI/giskard-oss) · 直接竞品 | 5954 / 574；11-18 06:39 | Apache-2.0；giskard-scan/v1.0.2 | `libs/`、`examples/`；Checks 与 Scan 区分功能测试和安全扫描 | 推理内容类型；`bfda958` |
+| [OpenInference](https://github.com/Arize-ai/openinference) · 技术参考 | 1325 / 386；11-18 00:44 | Apache-2.0；Bedrock instrumentation 0.5.9 | `spec/`、`js/`、`python/`；跨语言 trace 规范可供未来 JSONL 导出设计 | 错误状态与清理；`ec9473b` |
+| [simple-evals](https://github.com/openai/simple-evals) · 技术参考 | 4707 / 526；04-22 22:16 | MIT；无 | README 有弃用说明，根目录 `sampler/` 与各评测脚本；只参考简洁样本/评分边界，不新增依赖 | 合并结果名称；`652c89d` |
+| [OLMES](https://github.com/allenai/olmes) · 直接竞品 | 412 / 109；03-24 17:47 | Apache-2.0；无 | `oe_eval/`、`OUTPUT_FORMATS.md`；评测输出格式与模型声明值得参考 | 未知指标显式报错；`5a51f50` |
+| [Ai2 safety-eval](https://github.com/allenai/safety-eval) · 领域参考 | 112 / 36；08-31 07:24 | 许可证待核；无 | `evaluation/`、`src/`；安全评测与通用能力评测需分开解释 | 采样 seed；`060cc90` |
+| [Hugging Face Evaluate](https://github.com/huggingface/evaluate) · 技术参考 | 2497 / 383；11-16 20:56 | Apache-2.0；v0.4.6 | `metrics/`、`comparisons/`、`measurements/`；指标、比较和测量模块分离 | FEVER 标签计数；`a5db2ad` |
+| [PyRIT](https://github.com/microsoft/PyRIT) · 领域参考 | 4932 / 1079；11-18 13:01 | MIT；v1.2.0 | `pyrit/`、`tests/`、`frontend/`；红队场景有独立权限与目标安全要求 | Shell 命令评分器；`483fc76` |
+| [LangWatch](https://github.com/langwatch/langwatch) · 间接竞品 | 5044 / 433；11-18 14:14 | Apache-2.0；langwatch-3.24.0 | `apps/`、`sdks/`、`services/`；自托管可观测性和评测组合，范围远大于本机产品 | 迁移顺序；`c93c86a` |
+| [Vivaria](https://github.com/METR/vivaria) · 领域参考 | 145 / 41；10-07 18:20 | MIT；无；仓库已归档 | `server/`、`ui/`、`schemas/`；README 提及向 Inspect 迁移，故不采用为新依赖 | PowerShell 编码；`20a6c29` |
+| [Autoevals](https://github.com/braintrustdata/autoevals) · 技术参考 | 1085 / 102；11-17 16:40 | MIT；py-0.4.1 | `js/`、`py/`、`SCORERS.md`；评分器版本与测试样例适合参考 | trace 线程加载；`89c6bd7` |
+
+研究转化：本轮实际实现了 Manifest 对齐的会话比较与分数降幅门禁，参考 [promptfoo 的断言/结果设计](https://github.com/promptfoo/promptfoo/blob/main/site/docs/configuration/expected-outputs/index.md)、[HELM 的 RunSpec 设计](https://github.com/stanford-crfm/helm/blob/main/docs/code.md) 和 [Langfuse 的数据集版本思路](https://github.com/langfuse/langfuse-docs/blob/main/content/docs/evaluation/experiments/datasets.mdx)，代码独立编写，没有复制外部源码。未采纳通用 agent 沙箱、云端追踪服务、远程多租户和原生移动端；它们超出本机单用户产品的当前安全与维护边界。界面借鉴结果对比中的逐项状态与排除原因展示，沿用 MIND BENCH 既有视觉系统，不复制竞品界面。
+
+现有 [升级路线图](UPGRADE_ROADMAP.md) 已有 EV-001—EV-057 共 57 项具体候选，其中 EV-032 已落地，EV-033 的分数阈值部分已落地；失败率、延迟与成本阈值、复跑和界面差异视图仍待实现。后续大版本前应重新核对上述 30 个项目的近期发布和许可证，轻量定期检查可由维护者手动执行；本轮没有设置自动抓取或自动合并第三方代码。
+
 研究日期：2026-11-16（第二轮审查）  
 范围：AI 评测、提示词回归、可观测性、数据集基准和报告工程。研究目标是比较实现模式，不复制外部题目、数据或代码。
 
