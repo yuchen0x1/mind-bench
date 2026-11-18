@@ -25,7 +25,7 @@
 
 **[v0.4.0](https://github.com/yuchen0x1/mind-bench/releases/tag/v0.4.0)** · 2026-11-18
 
-本版新增基于 Run Manifest 的历史会话回归比较和分数降幅门禁，并在报告页提供操作入口。Mock、外部回答、未评分和配置不兼容样本会明确排除；真实供应商回归仍需用户提供密钥并自行验证。
+新增本机已保存会话的回归比较 API 和报告页入口：比较同一题目和模型的分数，输出降幅与质量门禁结果；无可比样本不会误报通过。
 
 [全部发行记录](https://github.com/yuchen0x1/mind-bench/releases)
 
