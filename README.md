@@ -20,19 +20,17 @@
 
 ## 最新更新
 
-### Unreleased · 2026-11-17
+<!-- github-release:start -->
 
-界面支持自动跟随浏览器或系统语言，也可手动选择简体中文或 English，并在本地浏览器中保留选择。工作台导航、运行状态、主题设置、更新提示和系统设置等核心界面会即时切换；题库题面、参考答案和评测数据保持原文。
+**[v0.3.1](https://github.com/yuchen0x1/mind-bench/releases/tag/v0.3.1)** · 2026-11-17
 
-### 0.3.0 · 2026-11-16
+本版为工作台壳层新增自动语言选择、手动中文/English 切换和本地持久化。导航、运行状态、设置和更新提示即时更新；题库题面、参考答案与评测数据保持原文。评测引擎、评分规则和本地服务边界未在本版重写。
 
-在既有可复现运行清单的基础上补充了确定性挑战种子、进程重启后的会话恢复、供应商类型与 URL 边界校验、CSV 导出公式注入防护、数据集原文 SHA-256、评分配置边界校验、请求 ID、审计/历史分页响应头，并修复了 `/api/tasks/export` 被动态路由误匹配的缺陷。发布包已完成独立校验。
+[全部发行记录](https://github.com/yuchen0x1/mind-bench/releases)
 
-### 0.2.1 · 2026-11-13
+<!-- github-release:end -->
 
-首个公开版本，支持带来源的题库、多模型评测、三层评分、可复现运行清单和报告导出。报告可自动刷新并停止测试，历史裁判使用运行时题目快照。提供完整的前后端发布包与 MIT 许可证。
-
-[完整发布记录](docs/releases/release-notes.md) · [下载最新版本](https://github.com/yuchen0x1/mind-bench/releases/latest) · [提交问题](https://github.com/yuchen0x1/mind-bench/issues)
+[完整更新日志](docs/releases/release-notes.md)
 
 ## 第一次使用：5 分钟走通流程
 
