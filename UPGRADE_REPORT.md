@@ -1,10 +1,10 @@
-# MIND BENCH 第二轮项目进化交付报告
+# MIND BENCH 第三轮项目进化交付报告
 
-日期：2026-11-16（Asia/Shanghai）  
+日期：2026-11-23（Asia/Shanghai）
 项目：`mind-bench`  
 分支：`main`  
-代码基线：`287927e`  
-发布目标：`v0.3.0`；本报告随版本发布流程更新。
+代码基线：`f056bd6`
+发布目标：`v0.5.0`；本报告随版本发布流程更新。
 
 ## A. 竞品研究
 
@@ -36,11 +36,11 @@
 - **trace、成本、运行和制品记录**：Langfuse、Phoenix、MLflow。
 - **严格环境验证**：SWE-bench、EvalPlus；当前仅作为未来沙箱设计参考。
 
-MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、中文工作台和已落地的 Run Manifest；主要短板是没有基线质量门禁、持久化队列、路由代码分割、远程认证/租户隔离和代码执行沙箱。
+本轮刷新了 GitHub 官方元数据：promptfoo、lm-evaluation-harness、OpenCompass、DeepEval、MLflow、Langfuse、Inspect AI、shadcn/ui、Radix、Tailwind、Lucide、Motion、MUI、Ant Design、Mantine、DaisyUI 等项目均仍在维护，许可证和 Stars 快照见竞品记录。MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、中文工作台和已落地的 Run Manifest；主要短板仍是持久化队列、路由代码分割、远程认证/租户隔离和代码执行沙箱。
 
 ## B. 升级数量与状态
 
-共形成 **57 个有效升级点**，其中本轮实际实施 **11 个**，上一轮已完成 **20 个**，当前完成 **31 个**；规划中 **24 个**，延期 **2 个**。没有把同一个功能机械拆成多个项目。
+共形成 **57 个有效升级点**，本轮新增完成 EV-034（Manifest 复跑）与 EV-039（延迟/失败诊断），并保留上一轮已完成项；其余规划项未伪装成已完成。没有把同一个功能机械拆成多个项目。
 
 | EV 编号 | 状态 | 说明 |
 |---|---|---|
@@ -56,7 +56,11 @@ MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、�
 | EV-029 | 已完成 | 会话/审计分页元信息 |
 | EV-030 | 已完成 | 外部数据集原文 SHA-256 |
 | EV-031 | 已完成 | 运行提示和通知可访问性 |
-| EV-032—EV-042 | 计划 | Manifest 基线/门禁、复跑、差异视图、代码分割、分页题库、持久化队列、观测与 registry 能力 |
+| EV-032—EV-033 | 已完成 | Manifest 对齐比较 API、分数降幅门禁 |
+| EV-034 | 已完成 | 报告页按原配置复跑，版本漂移与不可复跑边界明确 |
+| EV-035—EV-038 | 计划 | 清单差异视图、代码分割、分页题库、持久化队列 |
+| EV-039 | 已完成 | 报告诊断 API 与 P50/P95/失败原因分组 |
+| EV-040—EV-042 | 计划 | Trace 导出、任务 registry、provider 能力声明 |
 | EV-043 | 计划 | DNS 解析后的私网/loopback 出站策略 |
 | EV-044—EV-045 | 计划 | 备份恢复、数据保留与脱敏 |
 | EV-046—EV-055 | 计划 | 裁判并发、题库复核、多解校验、成本预算、provider fixture、真实 Key 流程、归档、i18n、SBOM、压力基准 |
@@ -69,7 +73,8 @@ MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、�
 
 ### 修改的核心文件
 
-- `src/server.mjs`：请求 ID、限流桶清理、遗留会话恢复、CSV 安全单元格、导出路由顺序、供应商输入校验、随机 seed、导入哈希、分页响应头。
+- `src/server.mjs`：会话复跑与版本漂移保护、诊断 API、请求 ID、限流桶清理、遗留会话恢复、CSV 安全单元格、导出路由顺序、供应商输入校验、随机 seed、导入哈希、分页响应头。
+- `src/diagnostics.mjs`：失败原因分类、P50/P95/平均延迟和 Mock/外部隔离汇总。
 - `src/providers.mjs`：供应商类型常量和 URL 校验，模型发现/调用共用边界。
 - `src/scoring.mjs`：one_of/contains/keywords/numeric/word_limit 无效配置保护。
 - `src/App.jsx`：运行提示、toast 的 `role`/`aria-live`/`aria-label`。
@@ -78,6 +83,7 @@ MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、�
 
 - `src/reproducibility.mjs`：seed 转换和确定性 Fisher–Yates。
 - `tests/evolution.regression.test.js`：第二轮回归测试。
+- `tests/diagnostics.test.js`：诊断分类与百分位边界测试。
 - `PROJECT_AUDIT.md`：项目现状和风险档案。
 - `COMPETITOR_ANALYSIS.md`：15 个开源项目对标。
 - `UPGRADE_ROADMAP.md`：57 项升级计划。
@@ -85,18 +91,18 @@ MIND BENCH 的相对优势是本地 SQLite ownership、Mock/external 隔离、�
 
 ### 同步更新
 
-`README.md`、`CHANGELOG.md`、`docs/API.md`、`docs/ARCHITECTURE.md` 已同步新行为、边界和限制。没有数据库 schema 破坏性变更，没有删除用户数据，没有引入新运行时依赖。
+`README.md`、`CHANGELOG.md`、`docs/API.md`、`docs/releases/release-notes.md`、`UPGRADE_ROADMAP.md` 已同步新行为、边界和限制。没有数据库 schema 破坏性变更，没有删除用户数据，没有引入新运行时依赖。
 
 ## D. 测试与验证
 
 | 检查 | 结果 | 证据/说明 |
 |---|---|---|
-| `npm test -- --reporter=dot` | **PASS** | 9 个测试文件，57/57 通过 |
-| `npm run test:e2e` | **PASS** | Chromium 8/8 通过，覆盖仪表盘、题库、报告刷新/取消、Mock 隔离、工作台、设置、研究页和 390px 移动端 |
-| `npm run build` | **PASS** | Vite 构建成功；主 JS 927.04 kB，仍有 chunk size warning |
-| `npm run package:release` | **PASS** | 生成 `mind-bench-0.3.0.tar.gz`，74 文件，无用户数据 |
-| `npm run verify:release` | **PASS** | SHA-256、74 文件摘要、干净生产安装、UI/API/空数据检查通过 |
-| `npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high` | **PASS** | 0 vulnerabilities |
+| `npm test` | **PASS** | 12 个测试文件，70/70 通过 |
+| `npm run test:e2e` | **PASS** | Chromium 9/9 通过，覆盖报告复跑/诊断以及既有仪表盘、题库、刷新/取消、Mock 隔离、工作台、设置、研究页和 390px 移动端 |
+| `npm run build` | **PASS** | Vite 构建成功；主 JS 940.80 kB，仍有 chunk size warning |
+| `npm run package:release` | **PASS** | 生成 `mind-bench-0.5.0.tar.gz`，83 文件，无用户数据 |
+| `npm run verify:release` | **PASS** | SHA-256、83 文件摘要、干净生产安装、UI/API/空数据检查通过 |
+| `npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high` | **未在本轮重跑** | 依赖清单未新增运行时包；上一轮官方 registry 审计为 0 vulnerabilities |
 | 默认镜像源 `npm audit --omit=dev` | **BLOCKED** | 镜像端点返回 `NOT_IMPLEMENTED`；已用官方 registry 重跑并通过 |
 | 真实供应商网络调用 | **NOT RUN / BLOCKED** | 当前没有真实 API Key，不伪造跨供应商成绩 |
 | 公网渗透测试 | **NOT APPLICABLE** | 当前产品边界是本机单用户；公网部署仍不安全 |

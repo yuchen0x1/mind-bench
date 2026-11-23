@@ -246,3 +246,65 @@ describe('leaderboard aggregation', () => {
     expect(JSON.stringify(profile.data)).not.toContain('sk-stub');
   });
 });
+
+describe('session replay and diagnostics', () => {
+  let mockModelId;
+  beforeAll(async () => {
+    const provider = await api('/api/providers', post({ name: 'Replay Mock', kind: 'mock' }));
+    const model = await api('/api/models', post({ providerId: provider.data.provider.id, name: 'Replay Mock Model', modelId: 'replay-mock' }));
+    mockModelId = model.data.model.id;
+  });
+
+  it('replays a finished session with the same tasks and models', async () => {
+    const original = await api('/api/test-sessions', post({ mode: 'category', categoryId: 'math', questionCount: 3, modelIds: [mockModelId], name: 'Replay source' }));
+    expect(original.status).toBe(201);
+    const replayed = await api(`/api/sessions/${original.data.sessionId}/replay`, post({}));
+    expect(replayed.status).toBe(201);
+    expect(replayed.data.replayedFrom).toBe(original.data.sessionId);
+    expect(replayed.data.results).toHaveLength(3);
+    const report = await api(`/api/sessions/${replayed.data.sessionId}`);
+    expect(report.data.session.name).toContain('复跑');
+    expect(report.data.runs.every((run) => run.isMock)).toBe(true);
+    expect(report.data.session.manifest.session.settings.replayedFrom).toBe(original.data.sessionId);
+  });
+
+  it('rejects replaying a session that is still running', async () => {
+    const pending = new Set();
+    const { createServer } = await import('node:http');
+    const upstream = createServer((_req, res) => { pending.add(res); });
+    await new Promise((done) => upstream.listen(0, '127.0.0.1', done));
+    try {
+      const provider = await api('/api/providers', post({ name: 'Slow Replay', kind: 'openai-compatible', baseUrl: `http://127.0.0.1:${upstream.address().port}/v1` }));
+      const model = await api('/api/models', post({ providerId: provider.data.provider.id, name: 'Slow model', modelId: 'slow-replay', timeoutMs: 30000, maxRetries: 0 }));
+      const started = await api('/api/test-runs', post({ taskId: 'math-01', modelIds: [model.data.model.id], deferred: true, name: 'Running source' }));
+      expect(started.status).toBe(202);
+      const response = await api(`/api/sessions/${started.data.sessionId}/replay`, post({}));
+      expect(response.status).toBe(409);
+      expect(response.data.error).toContain('仍在运行');
+      await api(`/api/sessions/${started.data.sessionId}/cancel`, post({}));
+      for (const res of pending) { res.writeHead(499, { 'content-type': 'application/json' }); res.end('{}'); }
+      await new Promise((done) => setTimeout(done, 100));
+    } finally {
+      upstream.closeAllConnections();
+      await new Promise((done) => upstream.close(done));
+    }
+  });
+
+  it('rejects replaying an external-answer session without inventing a model call', async () => {
+    const external = await api('/api/test-runs', post({ taskId: 'math-01', modelIds: [mockModelId], manualText: '0.5', name: 'External source' }));
+    expect(external.status).toBe(201);
+    const response = await api(`/api/sessions/${external.data.sessionId}/replay`, post({}));
+    expect(response.status).toBe(400);
+    expect(response.data.error).toContain('外部回答');
+  });
+
+  it('summarizes latency and failure groups without counting mock runs', async () => {
+    const session = await api('/api/test-runs', post({ taskId: 'math-01', modelIds: [mockModelId], name: 'Diagnostics' }));
+    const diagnostics = await api(`/api/sessions/${session.data.sessionId}/diagnostics`);
+    expect(diagnostics.status).toBe(200);
+    expect(diagnostics.data.totals.mock).toBe(1);
+    expect(diagnostics.data.latency.count).toBe(0);
+    expect(diagnostics.data.latency.p95).toBeNull();
+    expect(diagnostics.data.failureRate).toBeNull();
+  });
+});

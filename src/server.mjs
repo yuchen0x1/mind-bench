@@ -10,6 +10,7 @@ import { checkProviderConnection, invokeModel, listProviderModels, PROVIDER_KIND
 import { aggregateVerdicts, buildJudgePrompt, parseVerdict, rubricFor, verdictRationale } from './judge.mjs';
 import { seededShuffle } from './reproducibility.mjs';
 import { compareSessions } from './regression.mjs';
+import { summarizeDiagnostics } from './diagnostics.mjs';
 
 const app = express();
 app.disable('x-powered-by');
@@ -124,6 +125,11 @@ const recoverInterruptedSessions = () => {
   if (!stale.length) return;
   const timestamp = now();
   transaction(() => {
+    const staleRuns = db.prepare(`SELECT r.id FROM test_runs r
+      WHERE r.status='running' AND r.session_id IN (SELECT id FROM test_sessions WHERE status='running')
+      AND NOT EXISTS (SELECT 1 FROM model_responses x WHERE x.run_id=r.id)`).all();
+    const responseInsert = db.prepare('INSERT INTO model_responses (id,run_id,raw_text,latency_ms,error) VALUES (?,?,?,?,?)');
+    for (const run of staleRuns) responseInsert.run(uuid(), run.id, '', 0, '进程重启，运行被中断。');
     db.prepare("UPDATE test_runs SET status='failed',completed_at=COALESCE(completed_at,?) WHERE status='running' AND session_id IN (SELECT id FROM test_sessions WHERE status='running')").run(timestamp);
     db.prepare("UPDATE test_sessions SET status='failed',completed_at=COALESCE(completed_at,?) WHERE status='running'").run(timestamp);
   });
@@ -663,6 +669,49 @@ app.get('/api/sessions/:id',(req,res)=>{
 app.get('/api/sessions/:id/manifest',(req,res)=>{
   const session=db.prepare('SELECT id,name,mode,started_at,completed_at,run_manifest FROM test_sessions WHERE id=?').get(req.params.id);if(!session)return res.status(404).json({error:'找不到测试记录。'});
   res.json({session:{id:session.id,name:session.name,mode:session.mode,started_at:session.started_at,completed_at:session.completed_at},manifest:safeJson(session.run_manifest,{})});
+});
+app.get('/api/sessions/:id/diagnostics',(req,res)=>{
+  const session=db.prepare('SELECT id,name,status,started_at,completed_at FROM test_sessions WHERE id=?').get(req.params.id);
+  if(!session)return res.status(404).json({error:'找不到测试记录。'});
+  const runs=db.prepare(`SELECT r.status,r.is_mock,r.is_external,x.latency_ms,x.error FROM test_runs r LEFT JOIN model_responses x ON x.run_id=r.id WHERE r.session_id=?`).all(session.id);
+  res.json({session, ...summarizeDiagnostics(runs)});
+});
+app.post('/api/sessions/:id/replay',async (req,res)=>{
+  try{
+    const source=db.prepare('SELECT * FROM test_sessions WHERE id=?').get(req.params.id);
+    if(!source)return res.status(404).json({error:'找不到要复跑的测试记录。'});
+    if(source.status==='running')return res.status(409).json({error:'原测试仍在运行，请结束或停止后再复跑。'});
+    const manifest=safeJson(source.run_manifest,{});
+    if(!Array.isArray(manifest.tasks)||!manifest.tasks.length||!Array.isArray(manifest.models)||!manifest.models.length)
+      return res.status(409).json({error:'该记录缺少完整的运行清单，无法按原配置复跑。'});
+    if(manifest.execution?.flags?.external)
+      return res.status(400).json({error:'外部回答批次无法复跑；请重新粘贴回答或选择真实模型。'});
+    const seen=new Set();const tasks=[];const missingTasks=[];
+    for(const snapshot of manifest.tasks){
+      if(seen.has(snapshot.id))continue;
+      seen.add(snapshot.id);
+      const task=getTask(snapshot.id);
+      if(!task||!task.is_public)missingTasks.push(snapshot.id);
+      else tasks.push(task);
+    }
+    if(missingTasks.length)return res.status(409).json({error:`以下题目已删除或不再公开，无法复跑：${missingTasks.join('、')}`});
+    const modelIds=[...new Set(manifest.models.map((model)=>model.id))];
+    if(modelIds.length>32)return res.status(400).json({error:'该批次使用的模型超过 32 个，无法一次复跑。'});
+    const unavailable=modelIds.filter((id)=>{const model=modelById.get(id);return !model||!model.enabled||!model.provider_enabled;});
+    if(unavailable.length)return res.status(409).json({error:'以下模型已删除或停用，无法复跑；请先在模型管理中启用。',modelIds:unavailable});
+    const models=allowedModels(modelIds);
+    const settings=safeJson(source.settings,{});
+    const repeats=source.mode==='stability'?Math.min(5,Math.max(2,Number(settings.repeats)||3)):1;
+    const entries=tasks.flatMap((task)=>Array.from({length:repeats},()=>({task,promptOverride:settings.promptOverride??undefined})));
+    if(entries.length*models.length>300)return res.status(400).json({error:'复跑会产生超过 300 个模型-题目任务，请缩小原批次范围。'});
+    const versionDrift=tasks.filter((task)=>manifest.tasks.some((snapshot)=>snapshot.id===task.id&&snapshot.version!==task.version)).map((task)=>({id:task.id,from:manifest.tasks.find((snapshot)=>snapshot.id===task.id).version,to:task.version}));
+    const replaySettings={...settings,taskIds:tasks.map((task)=>task.id),modelIds:models.map((model)=>model.id),replayedFrom:source.id};
+    const session=beginSession(`${source.name}（复跑）`,source.mode,replaySettings,{tasks,models,external:false});
+    writeAudit('replay','session',session.id,{sourceSessionId:source.id,tasks:tasks.length,models:models.length});
+    if(req.body?.deferred===true){executeSessionDetached({session,entries,models});return res.status(202).json({sessionId:session.id,replayedFrom:source.id,versionDrift,status:'running'});}
+    const results=await executeSession({session,entries,models});
+    res.status(201).json({sessionId:session.id,replayedFrom:source.id,versionDrift,results});
+  }catch(error){res.status(error.status??400).json({error:error.message});}
 });
 app.get('/api/sessions/:id/compare',(req,res)=>{
   const baselineId = String(req.query.baseline ?? '');

@@ -23,9 +23,9 @@
 
 <!-- github-release:start -->
 
-**[v0.4.0](https://github.com/yuchen0x1/mind-bench/releases/tag/v0.4.0)** · 2026-11-18
+**[v0.5.0](https://github.com/yuchen0x1/mind-bench/releases/tag/v0.5.0)** · 2026-11-23
 
-新增本机已保存会话的回归比较 API 和报告页入口：比较同一题目和模型的分数，输出降幅与质量门禁结果；无可比样本不会误报通过。
+报告页支持按原运行清单一键复跑，并新增真实运行的 P50/P95 延迟、失败率与失败原因诊断；Mock、外部回答与无真实样本均会明确隔离，不虚构质量数据。
 
 [全部发行记录](https://github.com/yuchen0x1/mind-bench/releases)
 
@@ -89,6 +89,8 @@ MIND BENCH（AI 智力评测竞技场）是一个**可真实运行**的本地 AI
 | 测试 | 原始回答完整保存（不改写、不猜测隐藏思维链） | ✅ 已实现 |
 | 测试 | 可复现运行清单：题目/模型/参数/评分/环境快照、SHA-256 完整性摘要、JSON 导出 | ✅ 已实现 |
 | 测试 | 同题目/模型/协议的历史会话回归比较与分数降幅门禁；Mock、外部及未评分样本排除 | ✅ 已实现 |
+| 测试 | 报告页按原配置复跑；题目/模型变更、外部回答与停用模型明确阻断 | ✅ 已实现 |
+| 运行诊断 | 真实运行 P50/P95/平均延迟、失败率、失败原因分组与可重试标记；Mock/外部隔离 | ✅ 已实现 |
 | 发布 | 完整前后端压缩包、逐文件摘要、Web 版本检测、Windows/Linux CI 和标签发布工作流 | ✅ 已实现 |
 | 运行可信度 | 随机挑战种子、进程重启会话恢复、请求 ID 与分页响应头 | ✅ 已实现 |
 | 评分 | 确定性规则 10 种：exact / one_of / contains / all_keywords / any_keywords / numeric / regex / json / word_limit / manual | ✅ 已实现 |

@@ -125,6 +125,8 @@ API 由 Express 在 `http://127.0.0.1:3000` 提供，同源路径以 `/api` 开�
 | GET | `/api/sessions/:id` | 会话设置、逐条 run/回答/评分，新增 `verdicts`（AI 裁判明细）。 |
 | GET | `/api/sessions/:id/manifest` | 读取该会话的不可变 Run Manifest：题目/模型/评分/环境快照与 SHA-256 完整性摘要。 |
 | GET | `/api/sessions/:id/compare?baseline=<会话ID>&maxScoreDrop=5` | 以路径中的会话为候选，按题目和模型与基线比较。返回 `pass`、`warn`、`fail` 或 `blocked`、逐项分数变化及排除原因；不会重新调用模型。阈值为 0—100 分。 |
+| GET | `/api/sessions/:id/diagnostics` | 会话运行诊断：真实运行的 P50/P95/平均延迟、失败率、失败原因分组（含是否可重试）与单条样例。Mock、外部回答和仍在运行的条目不进入延迟与失败率统计；无真实完成样本时返回 `null` 而不是 0。 |
+| POST | `/api/sessions/:id/replay` | 按该会话 Run Manifest 记录的题目与模型**新建**会话并重新调用模型。`{ deferred:true }` 立即返回 `202`。会话仍在运行返回 `409`，外部回答批次返回 `400`，题目被删除/隐藏或模型被停用返回 `409` 并列出对应 `modelIds`。响应中的 `versionDrift` 指明哪些题目自原批次后已有新版本。原会话保持不变。 |
 | POST | `/api/sessions/:id/cancel` | 取消运行中的会话；排队条目保存为 `cancelled`，不再调用供应商；已结束或不存在 `404`。 |
 | GET | `/api/runs/:id` | 单条运行详情：提示词、原始回答、Token、耗时、费用、评分、评分理由、`judge_model`。 |
 | PUT | `/api/runs/:id/evaluation` | 人工评分：`{ score: 0..100, passThreshold: 0..100, rationale }`。写入 `evaluator_type='human'`。 |
