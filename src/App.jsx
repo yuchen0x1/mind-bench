@@ -45,6 +45,7 @@ import {
   Moon,
   MoreHorizontal,
   Play,
+  Repeat2,
   Plus,
   RefreshCw,
   Search,
@@ -60,6 +61,7 @@ import {
   Target,
   Terminal,
   TriangleAlert,
+  Gauge,
   Wrench,
   Trash2,
   Trophy,
@@ -2954,6 +2956,69 @@ function modeLabel(mode) {
   );
 }
 
+function DiagnosticsPanel({ data, loading, error }) {
+  if (error)
+    return (
+      <section className="panel diagnostics-panel" role="status">
+        <div className="diagnostics-head">
+          <span className="diagnostics-icon"><Gauge size={16} /></span>
+          <div><b>运行诊断</b><small>诊断暂时无法载入：{error}</small></div>
+        </div>
+      </section>
+    );
+  if (!data || loading)
+    return (
+      <section className="panel diagnostics-panel" aria-busy="true">
+        <div className="diagnostics-head">
+          <span className="diagnostics-icon"><Gauge size={16} /></span>
+          <div><b>运行诊断</b><small>正在汇总延迟与失败原因…</small></div>
+        </div>
+      </section>
+    );
+  const latency = data.latency ?? {};
+  const hasLatency = latency.count > 0;
+  const failures = data.failures ?? [];
+  return (
+    <section className="panel diagnostics-panel">
+      <div className="diagnostics-head">
+        <span className="diagnostics-icon"><Gauge size={16} /></span>
+        <div>
+          <b>运行诊断</b>
+          <small>只统计真实模型运行；Mock 与外部回答单独计数，不参与延迟和失败率。</small>
+        </div>
+      </div>
+      <div className="diagnostics-metrics">
+        <div><span>P50 延迟</span><b>{hasLatency ? `${formatNum(latency.p50)} ms` : "—"}</b></div>
+        <div><span>P95 延迟</span><b>{hasLatency ? `${formatNum(latency.p95)} ms` : "—"}</b></div>
+        <div><span>平均延迟</span><b>{hasLatency ? `${formatNum(latency.average)} ms` : "—"}</b></div>
+        <div>
+          <span>失败率</span>
+          <b>{data.failureRate === null ? "—" : `${data.failureRate}%`}<small>{data.totals.real ? ` · ${data.failureCount}/${data.totals.real}` : ""}</small></b>
+        </div>
+      </div>
+      <div className="diagnostics-detail">
+        <div className="diagnostics-summary">
+          真实完成 {data.totals.realCompleted ?? 0} 条 · 取消 {data.totals.cancelled} 条 · Mock {data.totals.mock} 条 · 外部回答 {data.totals.external} 条
+          {data.retryableCount ? ` · ${data.retryableCount} 条失败可能通过重试恢复` : ""}
+        </div>
+        {failures.length ? (
+          <ul className="diagnostics-failures">
+            {failures.map((failure) => (
+              <li key={failure.code}>
+                <span className={`diagnostics-tag ${failure.retryable ? "retryable" : ""}`}>{failure.label}</span>
+                <b>{failure.count}</b>
+                <small title={failure.sample}>{failure.sample || "未记录错误详情"}</small>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="diagnostics-empty">本次会话没有失败的模型运行。</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ReportPage({ id, onBack, onNotice }) {
   const { data, error, loading, refresh } = useApi(`/api/sessions/${id}`, [id]);
   const judgesReq = useApi("/api/judges");
@@ -2966,8 +3031,10 @@ function ReportPage({ id, onBack, onNotice }) {
   const [judgeIds, setJudgeIds] = useState([]);
   const [judging, setJudging] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [replaying, setReplaying] = useState(false);
   const [diffMode, setDiffMode] = useState(true);
   const judges = judgesReq.data?.judges ?? [];
+  const diagnosticsReq = useApi(`/api/sessions/${id}/diagnostics`, [id]);
 
   const runs = data?.runs ?? [];
   const manifest = data?.session?.manifest ?? {};
@@ -3104,6 +3171,29 @@ function ReportPage({ id, onBack, onNotice }) {
       setComparing(false);
     }
   };
+  const replaySession = async () => {
+    setReplaying(true);
+    try {
+      const result = await request(`/api/sessions/${id}/replay`, {
+        method: "POST",
+        body: JSON.stringify({ deferred: true }),
+      });
+      if (result.versionDrift?.length) {
+        onNotice(
+          `已按当前题目版本创建复跑（${result.versionDrift.length} 道题自原批次后有新版本），可在测试历史中对照。`,
+        );
+      } else {
+        onNotice("已按原题目与模型配置创建复跑，可在测试历史中查看进度。");
+      }
+      historyReq.refresh();
+      window.location.hash = `report/${result.sessionId}`;
+      refresh();
+    } catch (e) {
+      onNotice(e.message, "error");
+    } finally {
+      setReplaying(false);
+    }
+  };
   const submitScore = async (runId) => {
     try {
       await request(`/api/runs/${runId}/evaluation`, {
@@ -3163,6 +3253,15 @@ function ReportPage({ id, onBack, onNotice }) {
             <button className="button button-ghost" onClick={refresh} disabled={loading}>
               <RefreshCw size={14} className={loading ? "spin" : ""} />
               刷新报告
+            </button>
+            <button
+              className="button button-ghost"
+              onClick={replaySession}
+              disabled={replaying || running || !data.session.manifest?.tasks?.length}
+              title="按原批次记录的题目与模型配置创建新会话"
+            >
+              <Repeat2 size={14} className={replaying ? "spin" : ""} />
+              {replaying ? "正在创建…" : "按原配置复跑"}
             </button>
             <button className="button button-ghost" onClick={exportJson}>
               <Download size={14} />
@@ -3277,6 +3376,7 @@ function ReportPage({ id, onBack, onNotice }) {
           <span>权重快照：{Object.entries(manifest.scoring?.weightSnapshot ?? {}).slice(0, 5).map(([key, value]) => `${key}=${value}`).join(" · ") || "—"}</span>
         </div>
       </section>
+      <DiagnosticsPanel data={diagnosticsReq.data} loading={diagnosticsReq.loading} error={diagnosticsReq.error} />
       <div className="report-grid">
         <section className="panel report-chart">
           <SectionTitle

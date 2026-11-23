@@ -46,7 +46,7 @@ test('mock provider stays explicitly labeled, saves a labeled report and never e
   await page.getByLabel('模型显示名称').fill('E2E Simulated Model');
   await page.getByLabel(/模型 ID/).fill('mock-e2e');
   await page.getByRole('button', { name: '添加模型', exact: true }).last().click();
-  await expect(page.getByText('模拟模式 · 不计入排名')).toBeVisible();
+  await expect(page.getByText('模拟模式 · 不计入排名').first()).toBeVisible();
   await captureScreenshot(page, { path: screenshotPath('providers.png'), fullPage: true });
 
   await page.getByRole('button', { name: '题库探索' }).first().click();

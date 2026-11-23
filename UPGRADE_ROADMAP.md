@@ -50,12 +50,12 @@
 |---|---|---|---|---|---|
 | EV-032 | 基于 Manifest 的回归基线 | 核心功能 | P1 | promptfoo、OpenAI Evals | 已实现只读 API：同题目/模型/协议比较并输出逐项差异；界面入口待做 |
 | EV-033 | 回归质量门禁 | 自动化 | P1 | promptfoo CI | 已实现可调分数降幅阈值和 pass/warn/fail/blocked；失败率、延迟、成本阈值待做 |
-| EV-034 | 运行复跑入口 | 核心功能 | P1 | HELM run spec、MLflow | 从 manifest 复制配置创建新会话，明确旧/新版本关系 |
+| EV-034 | 运行复跑入口 | 核心功能 | P1 | HELM run spec、MLflow | 从 manifest 复制配置创建新会话，明确旧/新版本关系 | 已完成：报告页按钮与 `POST /api/sessions/:id/replay`，外部回答/停用模型/缺失题目明确阻断 |
 | EV-035 | 版本/清单差异视图 | UX | P2 | HELM/MLflow | 显示题目、模型参数、权重、评分器变更 |
 | EV-036 | 路由级代码分割 | 性能 | P2 | Vite/React 生态 | 首屏 JS 降至 500 kB gzip 前的可解释预算，E2E 不回归 |
 | EV-037 | 分页题库加载 | 性能 | P2 | OpenCompass/LightEval | 大题库按 limit/offset 加载，搜索/筛选结果一致 |
 | EV-038 | 任务执行持久化队列 | 稳定性 | P1 | promptfoo runner/MLflow | 跨进程恢复排队项，幂等执行，资源上限明确 |
-| EV-039 | p95 延迟与失败原因统计 | 观测 | P2 | Phoenix/Langfuse | 报告和分析暴露 p50/p95、HTTP/timeout/cancel 分类 |
+| EV-039 | p95 延迟与失败原因统计 | 观测 | P2 | Phoenix/Langfuse | 报告和分析暴露 p50/p95、HTTP/timeout/cancel 分类 | 已完成：`/diagnostics` API、报告面板与稳定失败分类 |
 | EV-040 | trace/span 轻量导出 | 观测 | P3 | OpenTelemetry/Phoenix | 不引入服务依赖，提供 JSONL trace 导出 |
 | EV-041 | 任务 registry 插件边界 | 架构 | P2 | lm-eval/OpenAI Evals/LightEval | 允许新增评分器/任务 schema，版本和许可证可审计 |
 | EV-042 | provider 能力声明 | 架构 | P2 | OpenCompass/LightEval | 对 chat/completion/vision/tool 等能力做显式兼容检查 |

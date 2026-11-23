@@ -4208,6 +4208,28 @@ kbd {
 .diff-column{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--panel2)}
 .diff-column>b{font-size:11.5px;color:var(--text-2)}
 .diff-column p{margin:8px 0 0;white-space:pre-wrap;font-size:12px;line-height:1.8;color:var(--text-2);max-height:320px;overflow:auto}
+
+/* ---------- 2026-11 增量：运行诊断与复跑 ---------- */
+.diagnostics-panel{margin:0 0 20px;padding:18px 20px;background:linear-gradient(160deg,color-mix(in srgb,var(--panel) 88%,#7c9cff 12%),var(--panel) 62%)}
+.diagnostics-head{display:flex;align-items:flex-start;gap:11px}
+.diagnostics-head>b,.diagnostics-head div>b{display:block;font-size:13px}
+.diagnostics-head small{display:block;color:var(--text-3);font-size:11px;line-height:1.65;margin-top:3px}
+.diagnostics-icon{width:30px;height:30px;flex-shrink:0;border-radius:9px;display:grid;place-items:center;border:1px solid rgba(124,156,255,.32);background:rgba(124,156,255,.1);color:var(--blue)}
+.diagnostics-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:15px}
+.diagnostics-metrics>div{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+.diagnostics-metrics span{color:var(--text-3);font-size:10.5px}
+.diagnostics-metrics b{font-size:17px;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+.diagnostics-metrics b small{font-size:10px;color:var(--text-3);font-weight:400;margin-left:3px}
+.diagnostics-detail{margin-top:13px;border-top:1px dashed var(--line);padding-top:12px}
+.diagnostics-summary{color:var(--text-2);font-size:11.5px;line-height:1.7}
+.diagnostics-failures{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.diagnostics-failures li{display:grid;grid-template-columns:104px 34px minmax(0,1fr);align-items:center;gap:10px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.diagnostics-failures li>b{font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.diagnostics-failures li>small{color:var(--text-3);font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diagnostics-tag{justify-self:start;font-size:10.5px;padding:3px 7px;border-radius:5px;border:1px solid #f1828252;color:var(--red);background:#f182820f;white-space:nowrap}
+.diagnostics-tag.retryable{border-color:#f1ad684f;color:var(--orange);background:#f1ad680f}
+.diagnostics-empty{color:var(--text-3);font-size:11.5px;margin:9px 0 0}
+@media (max-width:900px){.diagnostics-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.diagnostics-failures li{grid-template-columns:96px 30px minmax(0,1fr)}}
 .diff-body:not(.diff-on) mark{background:none;color:inherit}
 .diff-remove{background:#f1828226;color:#ffb4b4;border-radius:3px;padding:0 1px}
 .diff-add{background:#5be0b026;color:#9df0d0;border-radius:3px;padding:0 1px}
